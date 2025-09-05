@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Three Acceleration Runs with Multi-Needle Speedometer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    canvas {
+      display: block;
+      margin: 0 auto 20px;
+    }
+    #readout {
+      font-size: 18px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h2>Speedometer (m/s) with Three Acceleration Runs</h2>
+  <div id="readout">
+    Run 1 (Red): 0.00 m/s | Run 2 (Blue): 0.00 m/s | Run 3 (Yellow): 0.00 m/s
+  </div>
+  <canvas id="dashboard" width="500" height="500"></canvas>
+  <canvas id="graph" width="500" height="250" style="border:1px solid #ccc;"></canvas>
+
+  <script>
+    const dashboard = document.getElementById('dashboard');
+    const graph = document.getElementById('graph');
+    const readout = document.getElementById('readout');
+    const ctxDash = dashboard.getContext('2d');
+    const ctxGraph = graph.getContext('2d');
+
+    const centerX = dashboard.width / 2;
+    const centerY = dashboard.height / 2;
+    const radius = 180;
+    const maxSpeed = 20; // m/s
+
+    // Run parameters
+    const runs = [
+      { color: 'red', accel: 4, duration: 5, points: [] },
+      { color: 'blue', accel: 10, duration: 2, points: [] },
+      { color: 'yellow', accel: 6, duration: 20/6, points: [] } // ~3.33s
+    ];
+
+    const totalDuration = Math.max(...runs.map(r => r.duration));
+    const startTime = performance.now();
+
+    function drawDial() {
+      ctxDash.clearRect(0, 0, dashboard.width, dashboard.height);
+      ctxDash.beginPath();
+      ctxDash.arc(centerX, centerY, radius, 0.75 * Math.PI, 0.25 * Math.PI);
+      ctxDash.lineWidth = 5;
+      ctxDash.strokeStyle = '#333';
+      ctxDash.stroke();
+
+      ctxDash.font = '16px Arial';
+      ctxDash.fillStyle = '#000';
+      for (let i = 0; i <= maxSpeed; i += 2) {
+        const angle = 0.75 * Math.PI + (i / maxSpeed) * 1.5 * Math.PI;
+        const x = centerX + (radius - 20) * Math.cos(angle);
+        const y = centerY + (radius - 20) * Math.sin(angle);
+        ctxDash.fillText(i + ' m/s', x - 20, y + 5);
+      }
+
+      ctxDash.font = '20px Arial';
+      ctxDash.fillText('Speedometer', centerX - 60, centerY + radius + 30);
+    }
+
+    function drawNeedle(speed, color) {
+      const angle = 0.75 * Math.PI + (speed / maxSpeed) * 1.5 * Math.PI;
+      const x = centerX + (radius - 40) * Math.cos(angle);
+      const y = centerY + (radius - 40) * Math.sin(angle);
+      ctxDash.beginPath();
+      ctxDash.moveTo(centerX, centerY);
+      ctxDash.lineTo(x, y);
+      ctxDash.strokeStyle = color;
+      ctxDash.lineWidth = 3;
+      ctxDash.stroke();
+
+      ctxDash.beginPath();
+      ctxDash.arc(centerX, centerY, 5, 0, 2 * Math.PI);
+      ctxDash.fillStyle = color;
+      ctxDash.fill();
+    }
+
+    function drawGraphAxes() {
+      ctxGraph.clearRect(0, 0, graph.width, graph.height);
+
+      // Axes
+      ctxGraph.beginPath();
+      ctxGraph.moveTo(40, 10);
+      ctxGraph.lineTo(40, 230); // y-axis
+      ctxGraph.lineTo(490, 230); // x-axis
+      ctxGraph.strokeStyle = '#000';
+      ctxGraph.stroke();
+
+      ctxGraph.font = '14px Arial';
+      ctxGraph.fillStyle = '#000';
+      ctxGraph.fillText('Velocity (m/s)', 5, 20);
+      ctxGraph.fillText('Time (s)', 440, 245);
+
+      // Y-axis scale
+      for (let v = 0; v <= maxSpeed; v += 2) {
+        const y = 230 - (v / maxSpeed) * 200;
+        ctxGraph.beginPath();
+        ctxGraph.moveTo(35, y);
+        ctxGraph.lineTo(40, y);
+        ctxGraph.stroke();
+        ctxGraph.fillText(v.toString(), 10, y + 4);
+      }
+
+      // X-axis scale
+      for (let t = 0; t <= totalDuration; t += 1) {
+        const x = 40 + (t / totalDuration) * 450;
+        ctxGraph.beginPath();
+        ctxGraph.moveTo(x, 230);
+        ctxGraph.lineTo(x, 235);
+        ctxGraph.stroke();
+        ctxGraph.fillText(t.toString(), x - 5, 245);
+      }
+    }
+
+    function drawGraphLines() {
+      runs.forEach(run => {
+        ctxGraph.beginPath();
+        ctxGraph.moveTo(40, 230);
+        run.points.forEach(p => {
+          const x = 40 + (p.t / totalDuration) * 450;
+          const y = 230 - (p.v / maxSpeed) * 200;
+          ctxGraph.lineTo(x, y);
+        });
+        ctxGraph.strokeStyle = run.color;
+        ctxGraph.lineWidth = 2;
+        ctxGraph.stroke();
+      });
+    }
+
+    function animate() {
+      const now = performance.now();
+      const elapsed = (now - startTime) / 1000;
+
+      let readoutText = [];
+
+      runs.forEach(run => {
+        let speed = elapsed <= run.duration ? run.accel * elapsed : maxSpeed;
+        speed = Math.min(speed, maxSpeed);
+        run.points.push({ t: elapsed, v: speed });
+        readoutText.push(
+          `${run.color.charAt(0).toUpperCase() + run.color.slice(1)}: ${speed.toFixed(2)} m/s`
+        );
+      });
+
+      readout.textContent = readoutText.join(' | ');
+
+      drawDial();
+      runs.forEach(run => drawNeedle(run.points[run.points.length - 1].v, run.color));
+      drawGraphAxes();
+      drawGraphLines();
+
+      if (elapsed < totalDuration) {
+        requestAnimationFrame(animate);
+      }
+    }
+
+    animate();
+  </script>
+
+</body>
+</html>

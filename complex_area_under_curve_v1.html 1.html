@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pierre Marie Curie Physics09 Class – Complex Velocity and Displacement</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+  h2 { margin-bottom: 18px; }
+  .row { display: flex; justify-content: center; gap: 28px; flex-wrap: wrap; margin-bottom: 18px; }
+  .panel { display: flex; flex-direction: column; align-items: center; }
+  .classLabel { font-weight: bold; font-size: 14px; color: #444; margin: 6px 0 8px; }
+  .label { font-weight: bold; margin-bottom: 8px; }
+  canvas { background: #fafafa; border: 1px solid #ccc; }
+  .readout { margin-top: 6px; min-height: 1.2em; font-size: 14px; color: #333; }
+  button { margin-top: 10px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
+  .legend { margin-top: 6px; font-size: 13px; color: #333; }
+  .legend span { display: inline-flex; align-items: center; margin: 0 8px; }
+  .swatch { display: inline-block; width: 14px; height: 14px; margin-right: 6px; border: 1px solid #999; }
+</style>
+</head>
+<body>
+
+<h2>Pierre Marie Curie Physics09 Class – Complex Velocity and Displacement</h2>
+
+<!-- Plot 1: Velocity vs Time (autostarts) -->
+<div class="row">
+  <div class="panel">
+    <div class="classLabel">Pierre Marie Curie Physics09 Class</div>
+    <div class="label">Plot 1: Velocity vs. Time (animated, full history)</div>
+    <canvas id="velCanvas" width="900" height="380"></canvas>
+    <div class="readout" id="velReadout"></div>
+    <button id="startAreas">Show Displacement Areas Plot</button>
+  </div>
+</div>
+
+<!-- Plot 2: Areas under the curve (starts on click) -->
+<div class="row">
+  <div class="panel">
+    <div class="classLabel">Pierre Marie Curie Physics09 Class</div>
+    <div class="label">Plot 2: Displacement as signed areas under v(t)</div>
+    <canvas id="areaCanvas" width="900" height="380"></canvas>
+    <div class="legend">
+      <span><i class="swatch" style="background:#ffc107"></i> 0–2 s (v = +5)</span>
+      <span><i class="swatch" style="background:#90caf9"></i> 2–4 s (5 → 0)</span>
+      <span><i class="swatch" style="background:#ef9a9a"></i> 4–8 s (0 → −3)</span>
+      <span><i class="swatch" style="background:#a5d6a7"></i> t = 8 s (jump −3 → +2)</span>
+      <span><i class="swatch" style="background:#ffe082"></i> 8–11 s (2 → 4)</span>
+    </div>
+    <div class="readout" id="areaReadout">Waiting to start…</div>
+  </div>
+</div>
+
+<script>
+/* Time and velocity scales */
+const tMax = 11;                     // seconds
+const vMin = -4, vMax = 6;           // velocity axis range
+const margin = { left: 70, right: 20, top: 30, bottom: 46 };
+
+/* Velocity profile per your spec:
+   - 0–2 s: constant +5 m/s
+   - 2–4 s: linear 5 → 0 m/s
+   - 4–8 s: linear 0 → −3 m/s
+   - t = 8 s: abrupt jump to +2 m/s (no area)
+   - 8–11 s: linear 2 → 4 m/s
+*/
+const segments = [
+  { t0: 0,  t1: 2,  type: 'const', v0: 5,  v1: 5,  color: '#ffc107', name: '0–2 s: +5' },
+  { t0: 2,  t1: 4,  type: 'lin',   v0: 5,  v1: 0,  color: '#90caf9', name: '2–4 s: 5→0' },
+  { t0: 4,  t1: 8,  type: 'lin',   v0: 0,  v1: -3, color: '#ef9a9a', name: '4–8 s: 0→−3' },
+  { t0: 8,  t1: 8,  type: 'jump',  v0: -3, v1: 2,  color: '#a5d6a7', name: 't=8 s: jump −3→+2' },
+  { t0: 8,  t1: 11, type: 'lin',   v0: 2,  v1: 4,  color: '#ffe082', name: '8–11 s: 2→4' }
+];
+
+/* Canvas setup */
+const velCanvas = document.getElementById('velCanvas');
+const areaCanvas = document.getElementById('areaCanvas');
+const vctx = velCanvas.getContext('2d');
+const actx = areaCanvas.getContext('2d');
+const velReadout = document.getElementById('velReadout');
+const areaReadout = document.getElementById('areaReadout');
+const startAreasBtn = document.getElementById('startAreas');
+
+/* Axes and transforms */
+function drawAxes(ctx, w, h) {
+  const x0 = margin.left, y0 = h - margin.bottom;
+  const x1 = w - margin.right, y1 = margin.top;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Axes
+  ctx.beginPath();
+  ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1.3; ctx.stroke();
+
+  // Labels
+  ctx.font = '13px Arial'; ctx.fillStyle = '#000';
+  ctx.fillText('Velocity (m/s)', 10, y1 - 8);
+  ctx.fillText('Time (s)', x1 - 60, h - 12);
+
+  // Zero-velocity baseline
+  const yZero = vToY(y0, y1, 0);
+  ctx.beginPath();
+  ctx.moveTo(x0, yZero); ctx.lineTo(x1, yZero);
+  ctx.strokeStyle = '#bbb'; ctx.lineWidth = 1; ctx.setLineDash([4,3]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Y ticks: every 1 m/s
+  for (let v = vMin; v <= vMax + 1e-9; v += 1) {
+    const y = vToY(y0, y1, v);
+    ctx.beginPath(); ctx.moveTo(x0 - 6, y); ctx.lineTo(x0, y);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillText(String(v), x0 - 34, y + 4);
+
+    // grid
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+    ctx.strokeStyle = '#eee'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // X ticks: every 1 s
+  for (let t = 0; t <= tMax + 1e-9; t += 1) {
+    const x = tToX(x0, x1, t);
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + 6);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillText(String(t), x - 4, y0 + 20);
+
+    // grid
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1);
+    ctx.strokeStyle = '#f5f5f5'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  return { x0, y0, x1, y1, yZero };
+}
+
+function tToX(x0, x1, t) {
+  return x0 + (t / tMax) * (x1 - x0);
+}
+function vToY(y0, y1, v) {
+  const clamped = Math.max(vMin, Math.min(v, vMax));
+  const frac = (clamped - vMin) / (vMax - vMin);
+  return y0 - frac * (y0 - y1);
+}
+
+/* Velocity function and displacement integrals */
+function velocityAt(t) {
+  for (const s of segments) {
+    if (s.type === 'jump') continue;
+    if (t >= s.t0 && t <= s.t1) {
+      if (s.type === 'const') return s.v0;
+      if (s.type === 'lin') {
+        const u = (t - s.t0) / (s.t1 - s.t0);
+        return s.v0 + u * (s.v1 - s.v0);
+      }
+    }
+  }
+  if (Math.abs(t - 8) < 1e-9) return 2; // exact jump time: post-jump value
+  if (t < segments[0].t0) return segments[0].v0;
+  if (t > tMax) return segments[segments.length - 1].v1;
+  return 0;
+}
+
+function signedAreaOfSegmentUpTo(s, tEnd) {
+  const start = s.t0;
+  const end = Math.min(s.t1, tEnd);
+  if (end <= start) return 0;
+  if (s.type === 'const') {
+    return s.v0 * (end - start);
+  } else if (s.type === 'lin') {
+    const vStart = s.v0;
+    const vEnd = s.v0 + (s.v1 - s.v0) * ((end - start) / (s.t1 - s.t0));
+    const vAvg = 0.5 * (vStart + vEnd);
+    return vAvg * (end - start);
+  } else { // jump
+    return 0;
+  }
+}
+
+function cumulativeDisplacement(t) {
+  return segments.reduce((sum, s) => sum + signedAreaOfSegmentUpTo(s, t), 0);
+}
+
+/* ---------------- Plot 1: Velocity vs Time (autostarts) ---------------- */
+const start1 = performance.now();
+
+function animateVelocity() {
+  const now = performance.now();
+  const elapsed = (now - start1) / 1000;
+  const t = Math.min(elapsed, tMax);
+
+  const f = drawAxes(vctx, velCanvas.width, velCanvas.height);
+
+  // Draw the entire history up to current t
+  vctx.lineWidth = 3;
+  vctx.strokeStyle = '#1976d2';
+  vctx.beginPath();
+  vctx.moveTo(tToX(f.x0, f.x1, 0), vToY(f.y0, f.y1, velocityAt(0)));
+
+  for (const s of segments) {
+    if (s.type === 'jump') {
+      // Draw vertical jump marker if within elapsed time
+      if (t >= s.t0) {
+        vctx.stroke(); // finish path so far
+        const xJ = tToX(f.x0, f.x1, s.t0);
+        const yBefore = vToY(f.y0, f.y1, s.v0);
+        const yAfter  = vToY(f.y0, f.y1, s.v1);
+        vctx.setLineDash([3,3]);
+        vctx.beginPath();
+        vctx.moveTo(xJ, yBefore);
+        vctx.lineTo(xJ, yAfter);
+        vctx.strokeStyle = '#888';
+        vctx.lineWidth = 2;
+        vctx.stroke();
+        vctx.setLineDash([]);
+        // Resume main path from post-jump
+        vctx.beginPath();
+        vctx.strokeStyle = '#1976d2';
+        vctx.lineWidth = 3;
+        vctx.moveTo(xJ, yAfter);
+      }
+      continue;
+    }
+
+    const segEnd = Math.min(s.t1, t);
+    if (segEnd > s.t0) {
+      const x0 = tToX(f.x0, f.x1, s.t0);
+      const y0v = vToY(f.y0, f.y1, s.v0);
+      const xE = tToX(f.x0, f.x1, segEnd);
+      const vEnd = s.type === 'const'
+        ? s.v0
+        : s.v0 + (s.v1 - s.v0) * ((segEnd - s.t0) / (s.t1 - s.t0));
+      const yEv = vToY(f.y0, f.y1, vEnd);
+      // Ensure continuity through segment boundaries
+      vctx.lineTo(x0, y0v);
+      vctx.lineTo(xE, yEv);
+    }
+  }
+  vctx.stroke();
+
+  // Time cursor
+  const xNow = tToX(f.x0, f.x1, t);
+  vctx.beginPath();
+  vctx.moveTo(xNow, f.y0);
+  vctx.lineTo(xNow, f.y1);
+  vctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  vctx.lineWidth = 2;
+  vctx.stroke();
+
+  const vNow = velocityAt(t);
+  velReadout.textContent = `t = ${t.toFixed(2)} s, v(t) = ${vNow.toFixed(2)} m/s`;
+
+  if (elapsed < tMax) requestAnimationFrame(animateVelocity);
+}
+animateVelocity();
+
+/* ---------------- Plot 2: Signed areas under v(t) (starts on click) ---------------- */
+function animateAreas() {
+  const start2 = performance.now();
+
+  function frame() {
+    const now = performance.now();
+    const elapsed = (now - start2) / 1000;
+    const t = Math.min(elapsed, tMax);
+
+    const f = drawAxes(actx, areaCanvas.width, areaCanvas.height);
+
+    // Shade each segment's area up to current time t
+    for (const s of segments) {
+      if (s.type === 'jump') {
+        if (t >= s.t0) {
+          // Show jump marker
+          const xJ = tToX(f.x0, f.x1, s.t0);
+          const yB = vToY(f.y0, f.y1, s.v0);
+          const yA = vToY(f.y0, f.y1, s.v1);
+          actx.setLineDash([3,3]);
+          actx.strokeStyle = s.color;
+          actx.beginPath();
+          actx.moveTo(xJ, yB); actx.lineTo(xJ, yA); actx.stroke();
+          actx.setLineDash([]);
+        }
+        continue;
+      }
+
+      const end = Math.min(s.t1, t);
+      if (end <= s.t0) continue;
+
+      // Trapezoid polygon from baseline to the segment line: (x0,y0) -> (xE,y0) -> (xE,yEv) -> (x0,y0v)
+      const x0 = tToX(f.x0, f.x1, s.t0);
+      const xE = tToX(f.x0, f.x1, end);
+      const y0v = vToY(f.y0, f.y1, s.v0);
+      const vEnd = s.type === 'const'
+        ? s.v0
+        : s.v0 + (s.v1 - s.v0) * ((end - s.t0) / (s.t1 - s.t0));
+      const yEv = vToY(f.y0, f.y1, vEnd);
+      const yZero = vToY(f.y0, f.y1, 0);
+
+      actx.beginPath();
+      actx.moveTo(x0, yZero);
+      actx.lineTo(xE, yZero);
+      actx.lineTo(xE, yEv);
+      actx.lineTo(x0, y0v);
+      actx.closePath();
+
+      // Semi-transparent fill per segment
+      let fill = s.color;
+      if (s.color === '#ffc107') fill = 'rgba(255,193,7,0.35)';
+      if (s.color === '#90caf9') fill = 'rgba(144,202,249,0.35)';
+      if (s.color === '#ef9a9a') fill = 'rgba(239,154,154,0.35)';
+      if (s.color === '#a5d6a7') fill = 'rgba(165,214,167,0.35)';
+      if (s.color === '#ffe082') fill = 'rgba(255,224,130,0.35)';
+      actx.fillStyle = fill;
+      actx.fill();
+
+      actx.strokeStyle = s.color;
+      actx.lineWidth = 2;
+      actx.stroke();
+    }
+
+    // Draw the full history of the velocity curve up to current t
+    actx.lineWidth = 2.5;
+    actx.strokeStyle = '#444';
+    actx.beginPath();
+    actx.moveTo(tToX(f.x0, f.x1, 0), vToY(f.y0, f.y1, velocityAt(0)));
+
+    for (const s of segments) {
+      if (s.type === 'jump') {
+        if (t >= s.t0) {
+          actx.stroke();
+          const xJ = tToX(f.x0, f.x1, s.t0);
+          const yB = vToY(f.y0, f.y1, s.v0);
+          const yA = vToY(f.y0, f.y1, s.v1);
+          actx.setLineDash([3,3]);
+          actx.strokeStyle = '#888';
+          actx.beginPath();
+          actx.moveTo(xJ, yB); actx.lineTo(xJ, yA); actx.stroke();
+          actx.setLineDash([]);
+          actx.beginPath();
+          actx.strokeStyle = '#444';
+          actx.lineWidth = 2.5;
+          actx.moveTo(xJ, yA);
+        }
+        continue;
+      }
+
+      const segEnd = Math.min(s.t1, t);
+      if (segEnd > s.t0) {
+        const x0 = tToX(f.x0, f.x1, s.t0);
+        const y0v = vToY(f.y0, f.y1, s.v0);
+        const xE = tToX(f.x0, f.x1, segEnd);
+        const vEnd = s.type === 'const'
+          ? s.v0
+          : s.v0 + (s.v1 - s.v0) * ((segEnd - s.t0) / (s.t1 - s.t0));
+        const yEv = vToY(f.y0, f.y1, vEnd);
+        actx.lineTo(x0, y0v);
+        actx.lineTo(xE, yEv);
+      }
+    }
+    actx.stroke();
+
+    // Time cursor
+    const xNow = tToX(f.x0, f.x1, t);
+    actx.beginPath();
+    actx.moveTo(xNow, f.y0);
+    actx.lineTo(xNow, f.y1);
+    actx.strokeStyle = 'rgba(0,0,0,0.2)';
+    actx.lineWidth = 2;
+    actx.stroke();
+
+    // Live total displacement
+    const S = cumulativeDisplacement(t);
+    areaReadout.textContent = `t = ${t.toFixed(2)} s, total displacement = ${S.toFixed(2)} m`;
+
+    if (elapsed < tMax) {
+      requestAnimationFrame(frame);
+    } else {
+      // Final totals and per-segment signed areas
+      const Sfinal = cumulativeDisplacement(tMax);
+      actx.font = 'bold 14px Arial';
+      actx.fillStyle = '#000';
+      actx.fillText(`Pierre Marie Curie Physics09 Class`, f.x0 + 12, f.y1 + 18);
+      actx.fillStyle = '#d32f2f';
+      actx.fillText(`Total displacement = ${Sfinal.toFixed(2)} m`, f.x0 + 12, f.y1 + 38);
+
+      let yText = f.y1 + 60;
+      actx.fillStyle = '#444';
+      for (const s of segments) {
+        if (s.type === 'jump') continue;
+        const A = signedAreaOfSegmentUpTo(s, s.t1);
+        actx.fillText(`${s.name}: ${A.toFixed(2)} m`, f.x0 + 12, yText);
+        yText += 18;
+      }
+    }
+  }
+  frame();
+}
+
+startAreasBtn.addEventListener('click', animateAreas);
+</script>
+
+</body>
+</html>

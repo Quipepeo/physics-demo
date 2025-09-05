@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Velocity and Displacement Animation</title>
+<style>
+  body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+  h2 { margin-bottom: 18px; }
+  .row { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; }
+  .panel { display: flex; flex-direction: column; align-items: center; }
+  canvas { background: #fafafa; border: 1px solid #ccc; }
+  .classLabel { font-weight: bold; font-size: 14px; margin-top: 8px; color: #444; }
+  .label { margin-top: 4px; font-weight: bold; }
+  .readout { margin-top: 8px; font-size: 14px; color: #333; }
+  button { margin-top: 12px; padding: 8px 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h2>Velocity and Displacement Animation</h2>
+
+<div class="row">
+  <div class="panel">
+    <canvas id="velOnly" width="520" height="320"></canvas>
+    <div class="classLabel">Pierre Marie Curie Physics09 Class</div>
+    <div class="label">Plot 1: |v(t)| for v = 5 m/s over 5 s</div>
+    <button id="startSecond">Show Displacement Plot</button>
+  </div>
+  <div class="panel">
+    <canvas id="velArea" width="520" height="320"></canvas>
+    <div class="classLabel">Pierre Marie Curie Physics09 Class</div>
+    <div class="label">Plot 2: Area under |v(t)| is displacement</div>
+    <div class="readout" id="dispReadout">Waiting to start...</div>
+  </div>
+</div>
+
+<script>
+const vMag = 5;          // m/s
+const tMax = 5;          // seconds
+const yMax = 6;          // velocity axis max
+const margin = { left: 60, right: 20, top: 20, bottom: 40 };
+
+const velOnly = document.getElementById('velOnly');
+const ctx1 = velOnly.getContext('2d');
+const velArea = document.getElementById('velArea');
+const ctx2 = velArea.getContext('2d');
+const dispReadout = document.getElementById('dispReadout');
+const startSecondBtn = document.getElementById('startSecond');
+
+function drawAxes(ctx, w, h) {
+  const x0 = margin.left, y0 = h - margin.bottom;
+  const x1 = w - margin.right, y1 = margin.top;
+  ctx.clearRect(0, 0, w, h);
+  ctx.beginPath();
+  ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0);
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 1.25; ctx.stroke();
+  ctx.font = '12px Arial'; ctx.fillStyle = '#000';
+  ctx.fillText('Velocity (m/s)', 10, y1 - 5);
+  ctx.fillText('Time (s)', x1 - 55, h - 10);
+  const yRange = yMax, yPixels = y0 - y1;
+  ctx.textAlign = 'right';
+  for (let v = 0; v <= yRange; v += 1) {
+    const y = y0 - (v / yRange) * yPixels;
+    ctx.beginPath(); ctx.moveTo(x0 - 6, y); ctx.lineTo(x0, y); ctx.stroke();
+    ctx.fillText(String(v), x0 - 8, y + 4);
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y);
+    ctx.strokeStyle = '#eeeeee'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = '#000';
+  }
+  ctx.textAlign = 'left';
+  const xRange = tMax, xPixels = x1 - x0;
+  for (let t = 0; t <= xRange + 1e-9; t += 0.5) {
+    const x = x0 + (t / xRange) * xPixels;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y0 + 6);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1.25; ctx.stroke();
+    ctx.fillText(String(t), x - 6, y0 + 20);
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1);
+    ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = 1; ctx.stroke();
+  }
+  return { x0, y0, x1, y1, xPixels, yPixels };
+}
+
+function vToY(y0, yPixels, v) {
+  return y0 - (Math.max(0, Math.min(v, yMax)) / yMax) * yPixels;
+}
+function tToX(x0, xPixels, t) {
+  return x0 + (Math.max(0, Math.min(t, tMax)) / tMax) * xPixels;
+}
+
+// First plot animation
+const start1 = performance.now();
+function animateFirst() {
+  const now = performance.now();
+  const elapsed = (now - start1) / 1000;
+  const t = Math.min(elapsed, tMax);
+  const v = vMag;
+  const f1 = drawAxes(ctx1, velOnly.width, velOnly.height);
+  ctx1.beginPath();
+  ctx1.moveTo(f1.x0, vToY(f1.y0, f1.yPixels, v));
+  ctx1.lineTo(tToX(f1.x0, f1.xPixels, t), vToY(f1.y0, f1.yPixels, v));
+  ctx1.strokeStyle = '#1976d2'; ctx1.lineWidth = 3; ctx1.stroke();
+  if (elapsed < tMax) requestAnimationFrame(animateFirst);
+}
+animateFirst();
+
+// Second plot animation (starts on button click)
+function animateSecond() {
+  const start2 = performance.now();
+  function frame() {
+    const now = performance.now();
+    const elapsed = (now - start2) / 1000;
+    const t = Math.min(elapsed, tMax);
+    const v = vMag;
+    const f2 = drawAxes(ctx2, velArea.width, velArea.height);
+    const xLeft = f2.x0;
+    const xRight = tToX(f2.x0, f2.xPixels, t);
+    const yTop = vToY(f2.y0, f2.yPixels, v);
+    const yBase = f2.y0;
+    ctx2.beginPath();
+    ctx2.moveTo(xLeft, yBase);
+    ctx2.lineTo(xRight, yBase);
+    ctx2.lineTo(xRight, yTop);
+    ctx2.lineTo(xLeft, yTop);
+    ctx2.closePath();
+    ctx2.fillStyle = 'rgba(255, 179, 0, 0.35)';
+    ctx2.fill();
+    ctx2.strokeStyle = 'rgba(255, 179, 0, 0.9)';
+    ctx2.lineWidth = 2;
+    ctx2.stroke();
+    ctx2.beginPath();
+    ctx2.moveTo(f2.x0, yTop);
+    ctx2.lineTo(xRight, yTop);
+    ctx2.strokeStyle = '#d32f2f';
+    ctx2.lineWidth = 3;
+    ctx2.stroke();
+    const s = v * t;
+    dispReadout.textContent = `t = ${t.toFixed(2)} s, displacement = ${s.toFixed(2)} m`;
+
+    if (elapsed < tMax) {
+      requestAnimationFrame(frame);
+    } else {
+      // Final label on the graph
+      ctx2.font = 'bold 14px Arial';
+      ctx2.fillStyle = '#d32f2f';
+      ctx2.fillText(`Pierre Marie Curie Physics09 Class`, f2.x0 + 20, f2.y1 + 20);
+      ctx2.fillText(`Total displacement = ${s.toFixed(2)} m`, f2.x0 + 20, f2.y1 + 40);
+    }
+  }
+  frame();
+}
+
+startSecondBtn.addEventListener('click', animateSecond);
+</script>
+
+</body>
+</html>
