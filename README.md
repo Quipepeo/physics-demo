@@ -1,2 +1,2 @@
 # physics-demo
-All live demo proprams
+Repository for live demo programs
