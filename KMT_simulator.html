@@ -11,7 +11,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- QRCode.js -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.4.4/build/qrcode.min.js"></script>
 
   <style>
     body { font-family: sans-serif; margin: 20px; }
@@ -58,7 +58,7 @@
         </tr>
         <tr><td>
             T (K)
-            <select id="Tmode" onchange="update()">
+            <select id="Tmode">
               <option value="auto">Auto</option>
               <option value="manual">Manual</option>
             </select>
@@ -82,8 +82,8 @@
     </table>
 
     <div style="text-align:center; margin-top:15px;">
-      <button onclick="exportCSV()">Export CSV</button>
       <button onclick="genQR()">Generate QR</button>
+      <button onclick="removeQR()">Remove QR</button>
       <button onclick="replay()">Replay History</button>
       <div id="qr"></div>
     </div>
@@ -102,285 +102,259 @@
   </div>
 
 <script>
-/* ─────────────────────────────────────────────────────────────────────────────
-   CONSTANTS & STATE
-───────────────────────────────────────────────────────────────────────────── */
-const R = 8.314, kB = 1.380649e-23;
-let history = [];
-let chartKE, chartV, chartHist;
-let particles = [], v1=0, v2=0;
+  // Physical constants
+  const R = 8.314, kB = 1.380649e-23;
+  let history = [], particles = [], v1 = 0, v2 = 0;
+  
+  // Canvas setup
+  const canvas = document.getElementById('simCanvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width  = canvas.parentElement.clientWidth;
+  canvas.height = canvas.parentElement.clientHeight;
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   INITIAL SETUP
-───────────────────────────────────────────────────────────────────────────── */
-const canvas = document.getElementById('simCanvas');
-const ctx = canvas.getContext('2d');
-canvas.width = canvas.parentElement.clientWidth;
-canvas.height = canvas.parentElement.clientHeight;
-
-// Input elements
-['P','V','n','M','Tman'].forEach(id => {
-  [1,2].forEach(i => {
-    const el = document.getElementById(id+i);
-    if(el) el.onchange = update;
-  });
-});
-document.getElementById('Tmode').onchange = update;
-const countSlider = document.getElementById('countSlider');
-countSlider.oninput = () => {
-  document.getElementById('countVal').textContent = countSlider.value;
-};
-countSlider.onchange = () => {
-  initParticles();
-  update();
-};
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   PARTICLE SIMULATION
-───────────────────────────────────────────────────────────────────────────── */
-function initParticles(){
-  particles = [];
-  const N = +countSlider.value;
-  for(let gas=1; gas<=2; gas++){
-    for(let i=0; i<N/2; i++){
-      particles.push({
-        gas, x:Math.random()*(canvas.width-6)+3,
-        y:Math.random()*(canvas.height-6)+3,
-        vx:0, vy:0
-      });
-    }
-  }
-}
-function updateVelocities(){
-  particles.forEach(p => {
-    const speed = p.gas===1? v1: v2;
-    const θ = Math.random()*2*Math.PI;
-    p.vx = speed*Math.cos(θ);
-    p.vy = speed*Math.sin(θ);
-  });
-}
-function animate(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  // draw & move
-  let speeds = [];
-  particles.forEach(p=>{
-    // color-grade by speed
-    const s = Math.hypot(p.vx,p.vy);
-    speeds.push(s);
-    const ratio = s/Math.max(v1,v2);
-    const color = `rgb(${255*ratio|0},${50},${255*(1-ratio)|0})`;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(p.x,p.y,3,0,2*Math.PI);
-    ctx.fill();
-    // velocity arrow
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(p.x,p.y);
-    ctx.lineTo(p.x+p.vx*0.3,p.y+p.vy*0.3);
-    ctx.stroke();
-    // move & bounce
-    p.x+=p.vx*0.02; p.y+=p.vy*0.02;
-    if(p.x<3||p.x>canvas.width-3) p.vx*=-1;
-    if(p.y<3||p.y>canvas.height-3) p.vy*=-1;
-  });
-  updateHist(speeds);
-  requestAnimationFrame(animate);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   GAS CALC & UPDATE
-───────────────────────────────────────────────────────────────────────────── */
-function updateGas(i){
-  const P = +document.getElementById('P'+i).value*1000;
-  const V = +document.getElementById('V'+i).value/1000;
-  const n = +document.getElementById('n'+i).value;
-  const M = +document.getElementById('M'+i).value/1000;
-  const manual = +document.getElementById('Tman'+i).value;
-  const Tcalc = P*V/(n*R);
-  const T = (document.getElementById('Tmode').value==='manual' && !isNaN(manual))
-            ? manual : Tcalc;
-  const KEtot = 1.5*n*R*T;
-  const KEavg = 1.5*kB*T;
-  const vrms  = Math.sqrt(3*R*T/M);
-  document.getElementById('T'+i).textContent = T.toFixed(1);
-  document.getElementById('KEt'+i).textContent = KEtot.toExponential(3);
-  document.getElementById('KEavg'+i).textContent = KEavg.toExponential(3);
-  document.getElementById('v'+i).textContent = vrms.toFixed(1);
-  if(i===1) v1=vrms; else v2=vrms;
-  // record state
-  history.push({
-    t: Date.now(),
-    params: ['P','V','n','M','Tman'].reduce((o,id)=>{
-      o[id+'1'] = +document.getElementById(id+'1').value;
-      o[id+'2'] = +document.getElementById(id+'2').value;
-      return o;
-    },{}),
-    mode: document.getElementById('Tmode').value,
-    count: +countSlider.value
-  });
-}
-function update(){
-  updateGas(1);
-  updateGas(2);
-  updateVelocities();
-  updateCharts();
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   CHARTS: KE, vᵣₘₛ vs T & HISTOGRAM
-───────────────────────────────────────────────────────────────────────────── */
-function initCharts(){
-  const ctx1 = document.getElementById('chartKE').getContext('2d');
-  chartKE = new Chart(ctx1, {
-    type:'scatter',
-    data:{datasets:[
-      {label:'KE₁ vs T', data:[], borderColor:'red', showLine:true, fill:false},
-      {label:'KE₂ vs T', data:[], borderColor:'orange', showLine:true, fill:false}
-    ]},
-    options:{
-      scales:{x:{title:{display:true,text:'T (K)'}},
-              y:{title:{display:true,text:'Total KE (J)'}}}
-    }
-  });
-
-  const ctx2 = document.getElementById('chartV').getContext('2d');
-  chartV = new Chart(ctx2,{
-    type:'scatter',
-    data:{datasets:[
-      {label:'v₁ vs T', data:[], borderColor:'red', showLine:true, fill:false},
-      {label:'v₂ vs T', data:[], borderColor:'orange', showLine:true, fill:false}
-    ]},
-    options:{
-      scales:{x:{title:{display:true,text:'T (K)'}},
-              y:{title:{display:true,text:'vₙₜ₋ᵣₘₛ (m/s)'}}}
-    }
-  });
-
-  const ctx3 = document.getElementById('chartHist').getContext('2d');
-  chartHist = new Chart(ctx3,{
-    type:'bar',
-    data:{labels:[], datasets:[
-      {label:'Particle speeds', backgroundColor:'rgba(100,150,230,0.6)', data:[]},
-      {label:'Maxwell–Boltzmann', type:'line', borderColor:'black', data:[], fill:false}
-    ]},
-    options:{
-      scales:{x:{title:{display:true,text:'Speed bin (m/s)'}},
-              y:{title:{display:true,text:'Count / PDF'}}}
-    }
-  });
-}
-function updateCharts(){
-  // append new points
-  const T1 = +document.getElementById('T1').textContent;
-  const T2 = +document.getElementById('T2').textContent;
-  const KE1= +document.getElementById('KEt1').textContent;
-  const KE2= +document.getElementById('KEt2').textContent;
-  chartKE.data.datasets[0].data.push({x:T1,y:KE1});
-  chartKE.data.datasets[1].data.push({x:T2,y:KE2});
-  chartKE.update();
-
-  const v_1= +document.getElementById('v1').textContent;
-  const v_2= +document.getElementById('v2').textContent;
-  chartV.data.datasets[0].data.push({x:T1,y:v_1});
-  chartV.data.datasets[1].data.push({x:T2,y:v_2});
-  chartV.update();
-}
-function updateHist(speeds){
-  // histogram bins
-  const bins = 20;
-  const maxS = Math.max(...speeds);
-  const binWidth = maxS/bins;
-  let counts = Array(bins).fill(0);
-  speeds.forEach(s => {
-    const idx = Math.min(bins-1, Math.floor(s/binWidth));
-    counts[idx]++;
-  });
-  // theoretical MB PDF
-  const meanT = (+document.getElementById('T1').textContent +
-                 +document.getElementById('T2').textContent)/2;
-  const a = Math.sqrt(2*kB*meanT/((+document.getElementById('M1').value+ +document.getElementById('M2').value)/2000));
-  const pdf = [];
-  const labels = [];
-  for(let i=0;i<bins;i++){
-    const v = (i+0.5)*binWidth;
-    labels.push(v.toFixed(0));
-    // Maxwell–Boltzmann PDF
-    const f = (4/Math.sqrt(Math.PI))*(v**2/(a**3))*Math.exp(-v*v/a**2);
-    pdf.push(f);
-  }
-  chartHist.data.labels = labels;
-  chartHist.data.datasets[0].data = counts;
-  chartHist.data.datasets[1].data = pdf;
-  chartHist.update();
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   CSV EXPORT
-───────────────────────────────────────────────────────────────────────────── */
-function exportCSV(){
-  let csv = 'time,P1,V1,n1,M1,T1,KEt1,v1,P2,V2,n2,M2,T2,KEt2,v2\n';
-  history.forEach(h=>{
-    const t = new Date(h.t).toISOString();
-    csv += `${t},${h.params.P1},${h.params.V1},${h.params.n1},${h.params.M1},${h.params.Tman1},${document.getElementById('KEt1').textContent},${document.getElementById('v1').textContent},`;
-    csv += `${h.params.P2},${h.params.V2},${h.params.n2},${h.params.M2},${h.params.Tman2},${document.getElementById('KEt2').textContent},${document.getElementById('v2').textContent}\n`;
-  });
-  const blob = new Blob([csv],{type:'text/csv'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'gas_sim_data.csv';
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   QR CODE
-───────────────────────────────────────────────────────────────────────────── */
-function genQR(){
-  const container = document.getElementById('qr');
-  container.innerHTML = '';
-  QRCode.toCanvas(container, window.location.href, {width:128});
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   HISTORY REPLAY
-───────────────────────────────────────────────────────────────────────────── */
-function replay(){
-  if(history.length===0) return;
-  let idx=0;
-  const run = () => {
-    const h = history[idx++];
-    document.getElementById('Tmode').value = h.mode;
-    ['P','V','n','M','Tman'].forEach(id=>{
-      document.getElementById(id+'1').value = h.params[id+'1'];
-      document.getElementById(id+'2').value = h.params[id+'2'];
+  // Wire up controls
+  ['P','V','n','M','Tman'].forEach(id=> {
+    [1,2].forEach(i=> {
+      const el = document.getElementById(id + i);
+      if (el) el.onchange = update;
     });
-    countSlider.value = h.count;
-    document.getElementById('countVal').textContent = h.count;
-    update();
-    if(idx < history.length) setTimeout(run, 500);
+  });
+  document.getElementById('Tmode').onchange = update;
+  const countSlider = document.getElementById('countSlider');
+  countSlider.oninput = () => document.getElementById('countVal').textContent = countSlider.value;
+  countSlider.onchange = () => { initParticles(); update(); };
+
+  // Particle init & animation
+  function initParticles() {
+    particles = [];
+    const N = +countSlider.value;
+    for (let gas = 1; gas <= 2; gas++) {
+      for (let i = 0; i < N/2; i++) {
+        particles.push({
+          gas,
+          x: Math.random()*(canvas.width-6)+3,
+          y: Math.random()*(canvas.height-6)+3,
+          vx: 0, vy: 0
+        });
+      }
+    }
+  }
+
+  function updateVelocities() {
+    particles.forEach(p => {
+      const speed = (p.gas === 1 ? v1 : v2);
+      const θ     = Math.random()*2*Math.PI;
+      p.vx = speed * Math.cos(θ);
+      p.vy = speed * Math.sin(θ);
+    });
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let speeds = [];
+    particles.forEach(p => {
+      const s = Math.hypot(p.vx, p.vy);
+      speeds.push(s);
+      const ratio = s / Math.max(v1, v2);
+      const color = `rgb(${255*ratio|0},50,${255*(1-ratio)|0})`;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, 2*Math.PI);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + p.vx*0.3, p.y + p.vy*0.3);
+      ctx.stroke();
+      p.x += p.vx*0.02; p.y += p.vy*0.02;
+      if (p.x < 3 || p.x > canvas.width-3) p.vx *= -1;
+      if (p.y < 3 || p.y > canvas.height-3) p.vy *= -1;
+    });
+    updateHist(speeds);
+    requestAnimationFrame(animate);
+  }
+
+  // Gas calculations & UI updates
+  function updateGas(i) {
+    const P     = +document.getElementById('P'+i).value * 1000;
+    const V     = +document.getElementById('V'+i).value / 1000;
+    const n     = +document.getElementById('n'+i).value;
+    const M     = +document.getElementById('M'+i).value / 1000;
+    const manual= +document.getElementById('Tman'+i).value;
+    const Tcalc = P*V/(n*R);
+    const Tmode = document.getElementById('Tmode').value;
+    const T     = (Tmode==='manual' && !isNaN(manual)) ? manual : Tcalc;
+    const KEtot = 1.5 * n * R * T;
+    const KEavg = 1.5 * kB * T;
+    const vrms  = Math.sqrt(3 * R * T / M);
+
+    document.getElementById('T'+i).textContent      = T.toFixed(1);
+    document.getElementById('KEt'+i).textContent    = KEtot.toExponential(3);
+    document.getElementById('KEavg'+i).textContent  = KEavg.toExponential(3);
+    document.getElementById('v'+i).textContent      = vrms.toFixed(1);
+
+    if (i===1) v1 = vrms; else v2 = vrms;
+
+    // record history
+    history.push({
+      t: Date.now(),
+      params: ['P','V','n','M','Tman'].reduce((o,id)=> {
+        o[id+'1'] = +document.getElementById(id+'1').value;
+        o[id+'2'] = +document.getElementById(id+'2').value;
+        return o;
+      }, {}),
+      mode: Tmode,
+      count: +countSlider.value
+    });
+  }
+
+  function update() {
+    updateGas(1);
+    updateGas(2);
+    updateVelocities();
+    updateCharts();
+  }
+
+  // Charts initialization & updates
+  let chartKE, chartV, chartHist;
+  function initCharts() {
+    const ctx1 = document.getElementById('chartKE').getContext('2d');
+    chartKE = new Chart(ctx1, {
+      type:'scatter',
+      data:{datasets:[
+        {label:'KE₁ vs T', data:[], borderColor:'red', showLine:true, fill:false},
+        {label:'KE₂ vs T', data:[], borderColor:'orange', showLine:true, fill:false}
+      ]},
+      options:{scales:{x:{title:{display:true,text:'T (K)'}}, y:{title:{display:true,text:'Total KE (J)'}}}}
+    });
+
+    const ctx2 = document.getElementById('chartV').getContext('2d');
+    chartV = new Chart(ctx2,{
+      type:'scatter',
+      data:{datasets:[
+        {label:'v₁ vs T', data:[], borderColor:'red', showLine:true, fill:false},
+        {label:'v₂ vs T', data:[], borderColor:'orange', showLine:true, fill:false}
+      ]},
+      options:{scales:{x:{title:{display:true,text:'T (K)'}}, y:{title:{display:true,text:'vₙₜ₋ᵣₘₛ (m/s)'}}}}
+    });
+
+    const ctx3 = document.getElementById('chartHist').getContext('2d');
+    chartHist = new Chart(ctx3,{
+      type:'bar',
+      data:{labels:[], datasets:[
+        {label:'Particle speeds', backgroundColor:'rgba(100,150,230,0.6)', data:[]},
+        {label:'Maxwell–Boltzmann', type:'line', borderColor:'black', data:[], fill:false}
+      ]},
+      options:{scales:{x:{title:{display:true,text:'Speed bin (m/s)'}}, y:{title:{display:true,text:'Count / PDF'}}}}
+    });
+  }
+
+  function updateCharts() {
+    const T1 = +document.getElementById('T1').textContent;
+    const T2 = +document.getElementById('T2').textContent;
+    const KE1= +document.getElementById('KEt1').textContent;
+    const KE2= +document.getElementById('KEt2').textContent;
+    chartKE.data.datasets[0].data.push({x:T1,y:KE1});
+    chartKE.data.datasets[1].data.push({x:T2,y:KE2});
+    chartKE.update();
+
+    const v_1= +document.getElementById('v1').textContent;
+    const v_2= +document.getElementById('v2').textContent;
+    chartV.data.datasets[0].data.push({x:T1,y:v_1});
+    chartV.data.datasets[1].data.push({x:T2,y:v_2});
+    chartV.update();
+  }
+
+  function updateHist(speeds){
+    const bins = 20;
+    const maxS = Math.max(...speeds);
+    const w = maxS/bins;
+    let counts = Array(bins).fill(0);
+    speeds.forEach(s=> counts[Math.min(bins-1,Math.floor(s/w))]++);
+    const labels = [], pdf = [];
+    const meanT = (+document.getElementById('T1').textContent +
+                   +document.getElementById('T2').textContent)/2;
+    const a = Math.sqrt(2*kB*meanT/((+document.getElementById('M1').value + +document.getElementById('M2').value)/2000));
+    for(let i=0;i<bins;i++){
+      const v = (i+0.5)*w;
+      labels.push(v.toFixed(0));
+      pdf.push((4/Math.sqrt(Math.PI))*(v**2/(a**3))*Math.exp(-v*v/a**2));
+    }
+    chartHist.data.labels = labels;
+    chartHist.data.datasets[0].data = counts;
+    chartHist.data.datasets[1].data = pdf;
+    chartHist.update();
+  }
+
+  // CSV export
+  function exportCSV(){
+    let csv = 'time,P1,V1,n1,M1,T1,KEt1,v1,P2,V2,n2,M2,T2,KEt2,v2\n';
+    history.forEach(h=>{
+      const t = new Date(h.t).toISOString();
+      csv += `${t},${h.params.P1},${h.params.V1},${h.params.n1},${h.params.M1},${h.params.Tman1},${document.getElementById('KEt1').textContent},${document.getElementById('v1').textContent},`;
+      csv += `${h.params.P2},${h.params.V2},${h.params.n2},${h.params.M2},${h.params.Tman2},${document.getElementById('KEt2').textContent},${document.getElementById('v2').textContent}\n`;
+    });
+    const blob = new Blob([csv],{type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'gas_sim_data.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // QR generation
+  window.genQR = function() {
+    const container = document.getElementById('qr');
+    container.innerHTML = '';
+    if (typeof QRCode === 'undefined') {
+      container.textContent = 'Error: QRCode library missing';
+      return;
+    }
+    const qrCanvas = document.createElement('canvas');
+    container.appendChild(qrCanvas);
+    QRCode.toCanvas(qrCanvas, window.location.href, {width:128, margin:2})
+      .then(() => console.log('✅ QR generated'))
+      .catch(err => {
+        console.error('❌ QR generation failed:', err);
+        container.textContent = 'QR generation error';
+      });
   };
-  idx=0; run();
-}
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   PWA SERVICE WORKER REGISTRATION
-───────────────────────────────────────────────────────────────────────────── */
-if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('sw.js')
-    .then(()=>console.log('SW registered'))
-    .catch(err=>console.warn('SW failed',err));
-}
+  // Remove QR
+  window.removeQR = function() {
+    document.getElementById('qr').innerHTML = '';
+  };
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   STARTUP
-───────────────────────────────────────────────────────────────────────────── */
-window.onload = ()=>{
-  initParticles();
-  initCharts();
-  update();
-  animate();
-};
+  // Replay history
+  window.replay = function(){
+    if (!history.length) return;
+    let idx = 0;
+    function step() {
+      const h = history[idx++];
+      document.getElementById('Tmode').value = h.mode;
+      ['P','V','n','M','Tman'].forEach(id=>{
+        document.getElementById(id+'1').value = h.params[id+'1'];
+        document.getElementById(id+'2').value = h.params[id+'2'];
+      });
+      countSlider.value = h.count;
+      document.getElementById('countVal').textContent = h.count;
+      update();
+      if (idx < history.length) setTimeout(step, 500);
+    }
+    step();
+  };
+
+  // Service worker registration
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js');
+  }
+
+  // Initialize
+  window.onload = () => {
+    initParticles();
+    initCharts();
+    update();
+    animate();
+  };
 </script>
 </body>
 </html>
