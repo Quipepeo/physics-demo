@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Pierre Marie Curie Physics 12 – Gas Particles in a Cube</title>
+<style>
+  body { background: #0f172a; color: #e5e7eb; font-family: system-ui, sans-serif; margin: 0; padding: 20px; }
+  h2 { margin-bottom: 12px; }
+  .wrap { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
+  canvas { background: #0b1222; border: 1px solid #1f2937; border-radius: 10px; width: 100%; height: auto; }
+  .controls { background: #111827; border-radius: 10px; padding: 16px; }
+  .row { margin: 12px 0; }
+  label { display: block; font-size: 13px; color: #9ca3af; margin-bottom: 6px; }
+  input[type="range"] { width: 100%; }
+  .btns { display: flex; gap: 8px; margin-top: 8px; }
+  button { background: #1f2937; color: #e5e7eb; border: 1px solid #374151; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  button:hover { background: #111827; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .card { background: #0b1222; border-radius: 8px; padding: 10px; min-height: 64px; }
+  .big { font-size: 20px; font-weight: 700; }
+  .small { font-size: 12px; color: #9ca3af; }
+  .note { color: #9ca3af; font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h2>Pierre Marie Curie Physics 12 – Gas particles in a cube: P, V, T, and moles</h2>
+
+<div class="wrap">
+  <canvas id="sim" width="900" height="560"></canvas>
+
+  <div class="controls">
+    <div class="row">
+      <label>Moles (particles): <span id="nOut">100</span></label>
+      <input id="nRange" type="range" min="20" max="400" step="10" value="100" />
+    </div>
+    <div class="row">
+      <label>Temperature scale: <span id="tempOut">1.00</span>x (<span id="tempKOut">300</span> K)</label>
+      <input id="tempRange" type="range" min="0.4" max="3.0" step="0.01" value="1.00" />
+    </div>
+    <div class="row">
+      <label>Volume (rel.): <span id="volOut">1.00</span>x • Edge: <span id="edgeOut">1.00</span>x</label>
+      <input id="volRange" type="range" min="0.125" max="8.0" step="0.005" value="1.00" />
+    </div>
+    <div class="row">
+      <label>Particle radius: <span id="rOut">3.0</span> px</label>
+      <input id="rRange" type="range" min="1.0" max="6.0" step="0.1" value="3.0" />
+    </div>
+    <div class="btns">
+      <button id="pauseBtn">Pause</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+    <div class="row stats">
+      <div class="card"><div class="small">Measured P</div><div class="big" id="pressureOut">0.000</div></div>
+      <div class="card"><div class="small">Ideal P (nRT/V)</div><div class="big" id="pIdealOut">0.000</div></div>
+      <div class="card"><div class="small">Collisions/s</div><div class="big" id="collRateOut">0.0</div></div>
+      <div class="card"><div class="small">Avg speed</div><div class="big" id="avgSpeedOut">0.0</div></div>
+    </div>
+    <div class="note">R = 8.314 J/(mol·K). 100 particles ≈ 1 mol (relative). Volume slider rescales cube (V ∝ L³).</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // Canvas and context
+  const canvas = document.getElementById('sim');
+  const ctx = canvas.getContext('2d');
+
+  // UI elements
+  const nRange      = document.getElementById('nRange');
+  const tempRange   = document.getElementById('tempRange');
+  const volRange    = document.getElementById('volRange');
+  const rRange      = document.getElementById('rRange');
+
+  const nOut        = document.getElementById('nOut');
+  const tempOut     = document.getElementById('tempOut');
+  const tempKOut    = document.getElementById('tempKOut');
+  const volOut      = document.getElementById('volOut');
+  const edgeOut     = document.getElementById('edgeOut');
+  const rOut        = document.getElementById('rOut');
+
+  const pressureOut = document.getElementById('pressureOut');
+  const pIdealOut   = document.getElementById('pIdealOut');
+  const collRateOut = document.getElementById('collRateOut');
+  const avgSpeedOut = document.getElementById('avgSpeedOut');
+
+  const pauseBtn    = document.getElementById('pauseBtn');
+  const resetBtn    = document.getElementById('resetBtn');
+
+  // Physical constants and base scales
+  const R           = 8.314;   // J/(mol·K)
+  const T0          = 300;     // baseline temperature in Kelvin
+  const N_REF       = 100;     // 100 particles ≈ 1 mol (relative)
+  const BASE_SIZE   = 420;     // px, cube edge for Vrel = 1
+  const MARGIN      = 60;      // px, padding around cube
+  const windowSec   = 2.0;     // rolling window for measured P
+
+  // Simulation state
+  let N             = parseInt(nRange.value, 10);
+  let tempScale     = parseFloat(tempRange.value);
+  let Vrel          = parseFloat(volRange.value);
+  let r             = parseFloat(rRange.value);
+
+  const cube        = { x: MARGIN, y: MARGIN, size: BASE_SIZE * Math.cbrt(Vrel) };
+  let parts         = [];      // particle array
+  const impulses    = [];      // recent wall impulses
+  const hitTimes    = [];      // recent collision times
+  const mass        = 1.0;     // relative mass
+  let paused        = false;
+  let last          = performance.now() / 1000;
+
+  // Utility functions
+  const nowSec = () => performance.now() / 1000;
+  const clamp  = (v, a, b) => Math.max(a, Math.min(b, v));
+  function randN() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  }
+
+  function updateUI() {
+    nOut.textContent     = N;
+    tempOut.textContent  = tempScale.toFixed(2);
+    tempKOut.textContent = Math.round(T0 * tempScale);
+    volOut.textContent   = Vrel.toFixed(2);
+    edgeOut.textContent  = Math.cbrt(Vrel).toFixed(2);
+    rOut.textContent     = r.toFixed(1);
+  }
+
+  function applyVolumeResize(oldSize, newSize) {
+    const cx = cube.x + oldSize / 2;
+    const cy = cube.y + oldSize / 2;
+    const s  = newSize / oldSize;
+    for (const p of parts) {
+      p.x = cx + (p.x - cx) * s;
+      p.y = cy + (p.y - cy) * s;
+    }
+  }
+
+  function initParticles() {
+    parts.length = 0;
+    impulses.length = 0;
+    hitTimes.length = 0;
+    const baseSpeed = 110;
+    const s = cube.size;
+    for (let i = 0; i < N; i++) {
+      const px = cube.x + r + Math.random() * (s - 2 * r);
+      const py = cube.y + r + Math.random() * (s - 2 * r);
+      let vx = randN() * baseSpeed * tempScale;
+      let vy = randN() * baseSpeed * tempScale;
+      parts.push({ x: px, y: py, vx, vy, tHit: -1 });
+    }
+  }
+
+  function updateParams(reinitN = true) {
+    const oldTemp = tempScale;
+    const oldSize = cube.size;
+
+    N         = parseInt(nRange.value, 10);
+    tempScale = parseFloat(tempRange.value);
+    Vrel      = parseFloat(volRange.value);
+    r         = parseFloat(rRange.value);
+
+    const newSize = BASE_SIZE * Math.cbrt(Vrel);
+    cube.size = newSize;
+
+    if (Math.abs(newSize - oldSize) > 1e-6 && parts.length) {
+      applyVolumeResize(oldSize, newSize);
+      const xMin = cube.x + r, xMax = cube.x + cube.size - r;
+      const yMin = cube.y + r, yMax = cube.y + cube.size - r;
+      for (const p of parts) {
+        p.x = clamp(p.x, xMin, xMax);
+        p.y = clamp(p.y, yMin, yMax);
+      }
+    }
+
+    if (Math.abs(tempScale - oldTemp) > 1e-12 && parts.length) {
+      const ratio = tempScale / oldTemp;
+      for (const p of parts) { p.vx *= ratio; p.vy *= ratio; }
+    }
+
+    if (reinitN) initParticles();
+    updateUI();
+  }
+  function drawCube() {
+    ctx.strokeStyle = '#3b82f6';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(cube.x, cube.y, cube.size, cube.size);
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+    ctx.fillText('Cube volume changes with slider (V ∝ L³)', cube.x, cube.y - 10);
+  }
+
+  function logImpulse(J) {
+    const t = nowSec();
+    impulses.push({ t, J });
+    hitTimes.push(t);
+    const cutoff = t - windowSec;
+    while (impulses.length && impulses[0].t < cutoff) impulses.shift();
+    while (hitTimes.length && hitTimes[0] < cutoff) hitTimes.shift();
+  }
+
+  function rollingPressure() {
+    if (!impulses.length) return 0;
+    let sumJ = 0;
+    for (const e of impulses) sumJ += e.J;
+    const wallArea = cube.size * cube.size;
+    return (sumJ / windowSec) / wallArea;
+  }
+
+  function collisionRate() {
+    if (!hitTimes.length) return 0;
+    const cutoff = nowSec() - windowSec;
+    let c = 0;
+    for (const ht of hitTimes) if (ht >= cutoff) c++;
+    return c / windowSec;
+  }
+
+  function averageSpeed() {
+    if (!parts.length) return 0;
+    let sum = 0;
+    for (const p of parts) sum += Math.hypot(p.vx, p.vy);
+    return sum / parts.length;
+  }
+
+  function nMoles() {
+    return N / N_REF;
+  }
+
+  function idealPressureRelative() {
+    const n = nMoles();
+    const T = T0 * tempScale;
+    const V = Vrel;
+    if (V <= 0) return 0;
+    const scale = 1.0 / 500.0; // tweak for display balance
+    return (n * R * T / V) * scale;
+  }
+
+  function step(dt) {
+    const xMin = cube.x + r, xMax = cube.x + cube.size - r;
+    const yMin = cube.y + r, yMax = cube.y + cube.size - r;
+    for (const p of parts) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.x < xMin) {
+        logImpulse(2 * mass * Math.abs(p.vx));
+        p.x = xMin; p.vx = -p.vx; p.tHit = nowSec();
+      } else if (p.x > xMax) {
+        logImpulse(2 * mass * Math.abs(p.vx));
+        p.x = xMax; p.vx = -p.vx; p.tHit = nowSec();
+      }
+      if (p.y < yMin) {
+        logImpulse(2 * mass * Math.abs(p.vy));
+        p.y = yMin; p.vy = -p.vy; p.tHit = nowSec();
+      } else if (p.y > yMax) {
+        logImpulse(2 * mass * Math.abs(p.vy));
+        p.y = yMax; p.vy = -p.vy; p.tHit = nowSec();
+      }
+    }
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawCube();
+    for (const p of parts) {
+      const hit = nowSec() - p.tHit < 0.12;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = hit ? '#22c55e' : '#60a5fa';
+      ctx.shadowColor = hit ? 'rgba(34,197,94,0.45)' : 'rgba(96,165,250,0.35)';
+      ctx.shadowBlur = hit ? 10 : 6;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    const Pm = rollingPressure();
+    const Pi = idealPressureRelative();
+    pressureOut.textContent = Pm.toFixed(3);
+    pIdealOut.textContent = Pi.toFixed(3);
+    collRateOut.textContent = collisionRate().toFixed(1);
+    avgSpeedOut.textContent = averageSpeed().toFixed(1);
+  }
+  function loop() {
+    const t = nowSec();
+    const dt = Math.min(0.033, Math.max(0.001, t - last));
+    last = t;
+    if (!paused) {
+      step(dt);
+      render();
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // Event listeners
+  nRange.addEventListener('input', () => {
+    updateParams(true); // reinit particles when N changes
+  });
+  tempRange.addEventListener('input', () => {
+    updateParams(false); // rescale velocities, keep N
+  });
+  volRange.addEventListener('input', () => {
+    updateParams(false); // resize cube, scale positions
+  });
+  rRange.addEventListener('input', () => {
+    r = parseFloat(rRange.value);
+    updateUI();
+  });
+
+  pauseBtn.addEventListener('click', () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+  });
+  resetBtn.addEventListener('click', () => {
+    initParticles();
+  });
+
+  // Initialise and start
+  updateUI();
+  initParticles();
+  loop();
+})();
+</script>
+
+</body>
+</html>
