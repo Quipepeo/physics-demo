@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kinematics Simulator – Position, Velocity, Acceleration</title>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    h1 {
+      text-align: center;
+    }
+    #controls {
+      max-width: 800px;
+      margin: 0 auto 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      align-items: center;
+    }
+    #controls label {
+      font-weight: bold;
+      display: block;
+      margin-bottom: 4px;
+    }
+    #controls input[type="number"],
+    #controls input[type="checkbox"] {
+      width: 100%;
+    }
+    #buttons {
+      grid-column: span 2;
+      text-align: center;
+      margin-top: 10px;
+    }
+    #charts {
+      display: flex;
+      justify-content: space-around;
+      flex-wrap: wrap;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .chart-container {
+      flex: 1 1 300px;
+      max-width: 380px;
+    }
+    .chart-container canvas {
+      width: 100% !important;
+      height: auto !important;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Kinematics Simulator</h1>
+
+  <div id="controls">
+    <div>
+      <label for="x0">Initial Position x₀ (m)</label>
+      <input type="number" id="x0" value="0" step="0.1">
+    </div>
+    <div>
+      <label for="v0">Initial Velocity v₀ (m/s)</label>
+      <input type="number" id="v0" value="0" step="0.1">
+    </div>
+    <div>
+      <label for="a">Acceleration a (m/s²)</label>
+      <input type="number" id="a" value="1" step="0.1">
+    </div>
+    <div>
+      <label for="duration">Duration (s)</label>
+      <input type="number" id="duration" value="10" step="1">
+    </div>
+    <div>
+      <label for="dt">Time Step Δt (s)</label>
+      <input type="number" id="dt" value="0.1" step="0.01">
+    </div>
+    <div>
+      <label><input type="checkbox" id="showPos" checked> Show Position</label>
+      <label><input type="checkbox" id="showVel" checked> Show Velocity</label>
+    </div>
+    <div id="buttons">
+      <button id="updateBtn">Update Graphs</button>
+      <button id="resetBtn">Start Over</button>
+    </div>
+  </div>
+
+  <div id="charts">
+    <div class="chart-container" id="posContainer">
+      <canvas id="posChart"></canvas>
+    </div>
+    <div class="chart-container" id="velContainer">
+      <canvas id="velChart"></canvas>
+    </div>
+    <div class="chart-container" id="accContainer">
+      <canvas id="accChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    // Utility: generate time array
+    function linspace(start, stop, step) {
+      const arr = [];
+      for (let t = start; t <= stop + 1e-9; t += step) {
+        arr.push(Number(t.toFixed(6)));
+      }
+      return arr;
+    }
+
+    // Compute kinematic data
+    function computeData(x0, v0, a, duration, dt) {
+      const t = linspace(0, duration, dt);
+      const x = t.map(time => x0 + v0 * time + 0.5 * a * time * time);
+      const v = t.map(time => v0 + a * time);
+      const acc = t.map(() => a);
+      return { t, x, v, acc };
+    }
+
+    // Chart instances
+    let posChart, velChart, accChart;
+
+    // Initialize all three charts
+    function initCharts() {
+      const commonOptions = {
+        type: 'line',
+        options: {
+          animation: false,
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Time (s)' } },
+            y: { title: { display: true, text: '' } }
+          }
+        }
+      };
+
+      // Position vs Time
+      const ctxX = document.getElementById('posChart').getContext('2d');
+      posChart = new Chart(ctxX, {
+        ...commonOptions,
+        data: { datasets: [{
+          label: 'Position x(t)',
+          data: [], 
+          borderColor: 'blue',
+          fill: false,
+        }]},
+        options: {
+          ...commonOptions.options,
+          scales: {
+            x: commonOptions.options.scales.x,
+            y: { title: { display: true, text: 'Position (m)' } }
+          }
+        }
+      });
+
+      // Velocity vs Time
+      const ctxV = document.getElementById('velChart').getContext('2d');
+      velChart = new Chart(ctxV, {
+        ...commonOptions,
+        data: { datasets: [{
+          label: 'Velocity v(t)',
+          data: [], 
+          borderColor: 'green',
+          fill: false,
+        }]},
+        options: {
+          ...commonOptions.options,
+          scales: {
+            x: commonOptions.options.scales.x,
+            y: { title: { display: true, text: 'Velocity (m/s)' } }
+          }
+        }
+      });
+
+      // Acceleration vs Time
+      const ctxA = document.getElementById('accChart').getContext('2d');
+      accChart = new Chart(ctxA, {
+        ...commonOptions,
+        data: { datasets: [{
+          label: 'Acceleration a(t)',
+          data: [], 
+          borderColor: 'red',
+          fill: false,
+        }]},
+        options: {
+          ...commonOptions.options,
+          scales: {
+            x: commonOptions.options.scales.x,
+            y: { title: { display: true, text: 'Acceleration (m/s²)' } }
+          }
+        }
+      });
+    }
+
+    // Render data into charts
+    function updateCharts() {
+      // Read inputs
+      const x0       = parseFloat(document.getElementById('x0').value);
+      const v0       = parseFloat(document.getElementById('v0').value);
+      const a        = parseFloat(document.getElementById('a').value);
+      const duration = parseFloat(document.getElementById('duration').value);
+      const dt       = parseFloat(document.getElementById('dt').value);
+      const showPos  = document.getElementById('showPos').checked;
+      const showVel  = document.getElementById('showVel').checked;
+
+      const { t, x, v, acc } = computeData(x0, v0, a, duration, dt);
+
+      // Prepare dataset objects for Chart.js
+      const dataX = t.map((tt, i) => ({ x: tt, y: x[i] }));
+      const dataV = t.map((tt, i) => ({ x: tt, y: v[i] }));
+      const dataA = t.map((tt, i) => ({ x: tt, y: acc[i] }));
+
+      // Update position chart
+      posChart.data.datasets[0].data = dataX;
+      document.getElementById('posContainer').style.display = showPos ? 'block' : 'none';
+      posChart.update();
+
+      // Update velocity chart
+      velChart.data.datasets[0].data = dataV;
+      document.getElementById('velContainer').style.display = showVel ? 'block' : 'none';
+      velChart.update();
+
+      // Update acceleration chart (always shown)
+      accChart.data.datasets[0].data = dataA;
+      document.getElementById('accContainer').style.display = 'block';
+      accChart.update();
+    }
+
+    // Reset inputs to defaults and re-render
+    function resetAll() {
+      document.getElementById('x0').value       = 0;
+      document.getElementById('v0').value       = 0;
+      document.getElementById('a').value        = 1;
+      document.getElementById('duration').value = 10;
+      document.getElementById('dt').value       = 0.1;
+      document.getElementById('showPos').checked = true;
+      document.getElementById('showVel').checked = true;
+      updateCharts();
+    }
+
+    // Hook up buttons
+    document.getElementById('updateBtn').addEventListener('click', updateCharts);
+    document.getElementById('resetBtn').addEventListener('click', resetAll);
+
+    // On page load
+    window.onload = () => {
+      initCharts();
+      resetAll();
+    };
+  </script>
+
+</body>
+</html>
