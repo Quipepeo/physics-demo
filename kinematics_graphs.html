@@ -116,20 +116,20 @@
   </div>
 
 
- <script>
-  // 1) Generate an array [start, start+step, …, stop]
+<script>
+  // helper: create [start, start+step, …, stop]
   function linspace(start, stop, step) {
-    const a = [];
+    const arr = [];
     for (let x = start; x <= stop + 1e-9; x += step) {
-      a.push(+x.toFixed(6));
+      arr.push(+x.toFixed(6));
     }
-    return a;
+    return arr;
   }
 
   let posChart, velChart, accChart;
-  let accPts = [];  // acceleration at t=0,1,2,…duration
+  let accPts = [];  // holds acceleration at t=0,1,2,…duration
 
-  // 2) Base chart configuration: zero‐axis only, no labels
+  // base options: zero-axis only, no numeric ticks
   function baseOptions(duration) {
     return {
       animation: false,
@@ -156,20 +156,17 @@
     };
   }
 
-  // 3) Initialize all three charts
+  // initialize all three charts
   function initCharts() {
+    const duration = +document.getElementById('duration').value;
+
     // Position vs Time
     posChart = new Chart(
       document.getElementById('posChart'),
       {
         type: 'line',
-        data: { datasets: [{
-          label: 'x(t)',
-          data: [],
-          borderColor: 'blue',
-          showLine: true
-        }]},
-        options: baseOptions(+document.getElementById('duration').value)
+        data: { datasets: [{ label: 'x(t)', data: [], borderColor: 'blue', showLine: true }]},
+        options: baseOptions(duration)
       }
     );
 
@@ -178,17 +175,12 @@
       document.getElementById('velChart'),
       {
         type: 'line',
-        data: { datasets: [{
-          label: 'v(t)',
-          data: [],
-          borderColor: 'green',
-          showLine: true
-        }]},
-        options: baseOptions(+document.getElementById('duration').value)
+        data: { datasets: [{ label: 'v(t)', data: [], borderColor: 'green', showLine: true }]},
+        options: baseOptions(duration)
       }
     );
 
-    // Acceleration vs Time (stepped, draggable at each integer second)
+    // Acceleration vs Time (stepped, draggable horizontally + vertically)
     accChart = new Chart(
       document.getElementById('accChart'),
       {
@@ -203,16 +195,35 @@
           stepped: true
         }]},
         options: {
-          ...baseOptions(+document.getElementById('duration').value),
+          ...baseOptions(duration),
           plugins: {
+            ...baseOptions(duration).plugins,
             dragData: {
-              round: 1,
+              round: 1,         // snap Y to integer
+              roundX: 1,        // snap X to integer second
               showTooltip: true,
-              dragX: false,
-              // onDrag: update accPts[idx], then redraw everything
-              onDrag: (e, datasetIndex, index, value) => {
-                // clamp and snap to integer
-                accPts[index] = Math.round(value.y);
+              dragX: true,
+              dragY: true,
+              onDrag: (e, ds, idx, value) => {
+                const oldIdx = idx;
+                const newIdx = Math.round(value.x);
+                const newVal = Math.round(value.y);
+
+                // ensure bounds
+                const dur = +document.getElementById('duration').value;
+                const clampedIdx = Math.max(0, Math.min(newIdx, dur));
+
+                // move point in accPts array
+                if (clampedIdx !== oldIdx) {
+                  // remove old
+                  const val = accPts.splice(oldIdx, 1)[0];
+                  // insert at new index
+                  accPts.splice(clampedIdx, 0, newVal);
+                } else {
+                  // just update value
+                  accPts[oldIdx] = newVal;
+                }
+
                 updateAll();
               }
             }
@@ -222,11 +233,10 @@
     );
   }
 
-  // 4) From accPts[], build tArr, vArr, xArr
+  // from accPts[], compute time, velocity, position
   function computeKinematics(acc, duration, dt) {
     const tArr = linspace(0, duration, dt);
     const vArr = [0], xArr = [0];
-
     for (let i = 1; i < tArr.length; i++) {
       const a0 = acc[Math.floor(tArr[i - 1])] || 0;
       const vNew = vArr[i - 1] + a0 * dt;
@@ -237,60 +247,56 @@
     return { tArr, xArr, vArr };
   }
 
-  // 5) Redraw all three charts
+  // redraw all charts
   function updateAll() {
     const duration = +document.getElementById('duration').value;
     const dt       = +document.getElementById('dt').value;
     const showPos  = document.getElementById('showPos').checked;
     const showVel  = document.getElementById('showVel').checked;
 
-    // Ensure accPts is exactly duration+1 long, filled with 0 if new
+    // ensure accPts is length = duration + 1
     if (accPts.length !== duration + 1) {
       accPts = Array(duration + 1).fill(0);
     }
 
-    // Recompute
+    // compute new kinematic data
     const { tArr, xArr, vArr } = computeKinematics(accPts, duration, dt);
 
-    // Update position chart data
+    // update position chart
     posChart.options = baseOptions(duration);
-    posChart.data.datasets[0].data = tArr.map((t,i) => ({ x: t, y: xArr[i] }));
+    posChart.data.datasets[0].data = tArr.map((t, i) => ({ x: t, y: xArr[i] }));
     document.getElementById('posContainer').style.display = showPos ? 'block' : 'none';
     posChart.update();
 
-    // Update velocity chart data
+    // update velocity chart
     velChart.options = baseOptions(duration);
-    velChart.data.datasets[0].data = tArr.map((t,i) => ({ x: t, y: vArr[i] }));
+    velChart.data.datasets[0].data = tArr.map((t, i) => ({ x: t, y: vArr[i] }));
     document.getElementById('velContainer').style.display = showVel ? 'block' : 'none';
     velChart.update();
 
-    // Update acceleration chart data: one red dot per integer second
+    // update acceleration chart
     accChart.options = {
       ...baseOptions(duration),
-      plugins: { dragData: accChart.options.plugins.dragData }
+      plugins: accChart.options.plugins
     };
-    accChart.data.datasets[0].data = accPts.map((a,i) => ({ x: i, y: a }));
+    accChart.data.datasets[0].data = accPts.map((a, i) => ({ x: i, y: a }));
     document.getElementById('accContainer').style.display = 'block';
     accChart.update();
   }
 
-  // 6) Reset to default state
+  // reset to defaults
   function resetAll() {
     document.getElementById('duration').value = 5;
     document.getElementById('dt').value       = 0.1;
     document.getElementById('showPos').checked= true;
     document.getElementById('showVel').checked= true;
-    // duration+1 = 6 elements for t=0…5
-    accPts = Array(6).fill(0);
+    accPts = Array(6).fill(0); // for t=0…5
+    initCharts();               // re-init to pick up new duration
     updateAll();
   }
 
-  // 7) Wire up buttons and onload
+  // wire buttons & onload
   document.getElementById('updateBtn').onclick = updateAll;
   document.getElementById('resetBtn').onclick  = resetAll;
-
-  window.onload = () => {
-    initCharts();
-    resetAll();
-  };
+  window.onload = () => resetAll();
 </script>
