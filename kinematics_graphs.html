@@ -1,67 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Kinematics Simulator</title>
 
-  <!-- Chart.js and DragData plugin -->
+  <!-- Chart.js + dragData plugin -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@2.0.0/dist/chartjs-plugin-dragdata.min.js"></script>
 
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    h1 { text-align: center; }
+    body { font-family: sans-serif; margin:20px; }
+    h1 { text-align:center; }
 
     #controls {
-      max-width: 800px;
-      margin: 0 auto 20px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-      gap: 10px;
-      align-items: end;
+      max-width:800px;
+      margin:0 auto 20px;
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+      gap:10px;
+      align-items:end;
     }
-
-    #controls label { font-weight: bold; display: block; margin-bottom: 4px; }
-    #controls input[type="number"] { width: 100%; }
-
-    #buttons { grid-column: span 2; text-align: center; margin-top: 10px; }
+    #controls label { display:block; font-weight:bold; margin-bottom:4px; }
+    #controls input[type=number] { width:100%; }
+    #buttons { grid-column: span 2; text-align:center; margin-top:10px; }
 
     #charts {
-      display: flex;
-      justify-content: space-around;
-      flex-wrap: wrap;
-      gap: 20px;
-      max-width: 1200px;
-      margin: 0 auto;
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:space-around;
+      gap:20px;
+      max-width:1200px;
+      margin:0 auto;
     }
-
     .chart-container {
-      flex: 1 1 300px;
-      max-width: 380px;
-      position: relative;
+      position:relative;
+      flex:1 1 300px;
+      max-width:380px;
     }
-
     .chart-container canvas {
-      width: 100% !important;
-      height: auto !important;
+      width:100% !important;
+      height:auto !important;
     }
-
+    /* overlay “+”/“–” */
     .axis-signs {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      pointer-events: none;
-      font-size: 1.2em;
-      color: #555;
+      position:absolute; top:0; left:0;
+      width:100%; height:100%;
+      pointer-events:none;
+      font-size:1.2em; color:#555;
     }
-
-    .axis-signs .py-plus  { position: absolute; left: 4px; top: 4px; }
-    .axis-signs .py-minus { position: absolute; left: 4px; bottom: 4px; }
-    .axis-signs .px-plus  { position: absolute; right: 4px; bottom: 4px; }
+    .axis-signs .py-plus  { position:absolute; left:4px;  top:4px; }
+    .axis-signs .py-minus { position:absolute; left:4px;  bottom:4px; }
+    .axis-signs .px-plus  { position:absolute; right:4px; bottom:4px; }
   </style>
 
   <script>
+    // register the plugin globally
     Chart.register(ChartDragDataPlugin);
   </script>
 </head>
@@ -69,8 +63,14 @@
   <h1>Kinematics Simulator</h1>
 
   <div id="controls">
-    <div><label for="duration">Duration (s)</label><input type="number" id="duration" value="5" step="1"></div>
-    <div><label for="dt">Time Step Δt (s)</label><input type="number" id="dt" value="0.1" step="0.01"></div>
+    <div>
+      <label for="duration">Duration (s)</label>
+      <input type="number" id="duration" value="5" step="1">
+    </div>
+    <div>
+      <label for="dt">Time Step Δt (s)</label>
+      <input type="number" id="dt" value="0.1" step="0.01">
+    </div>
     <div>
       <label><input type="checkbox" id="showPos" checked> Show Position</label>
       <label><input type="checkbox" id="showVel" checked> Show Velocity</label>
@@ -82,21 +82,91 @@
   </div>
 
   <div id="charts">
+    <!-- Position vs Time -->
     <div class="chart-container" id="posContainer">
       <canvas id="posChart"></canvas>
-      <div class="axis-signs"><div class="py-plus">+</div><div class="py-minus">−</div><div class="px-plus">t</div></div>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
     </div>
+
+    <!-- Velocity vs Time -->
     <div class="chart-container" id="velContainer">
       <canvas id="velChart"></canvas>
-      <div class="axis-signs"><div class="py-plus">+</div><div class="py-minus">−</div><div class="px-plus">t</div></div>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
     </div>
+
+    <!-- Acceleration vs Time -->
     <div class="chart-container" id="accContainer">
       <canvas id="accChart"></canvas>
-      <div class="axis-signs"><div class="py-plus">+</div><div class="py-minus">−</div><div class="px-plus">t</div></div>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
+    </div>
+  </div>
+  <body>
+  <h1>Kinematics Simulator</h1>
+
+  <div id="controls">
+    <div>
+      <label for="duration">Duration (s)</label>
+      <input type="number" id="duration" value="5" step="1">
+    </div>
+    <div>
+      <label for="dt">Time Step Δt (s)</label>
+      <input type="number" id="dt" value="0.1" step="0.01">
+    </div>
+    <div>
+      <label><input type="checkbox" id="showPos" checked> Show Position</label>
+      <label><input type="checkbox" id="showVel" checked> Show Velocity</label>
+    </div>
+    <div id="buttons">
+      <button id="updateBtn">Update Graphs</button>
+      <button id="resetBtn">Start Over</button>
     </div>
   </div>
 
+  <div id="charts">
+    <!-- Position vs Time -->
+    <div class="chart-container" id="posContainer">
+      <canvas id="posChart"></canvas>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
+    </div>
+
+    <!-- Velocity vs Time -->
+    <div class="chart-container" id="velContainer">
+      <canvas id="velChart"></canvas>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
+    </div>
+
+    <!-- Acceleration vs Time -->
+    <div class="chart-container" id="accContainer">
+      <canvas id="accChart"></canvas>
+      <div class="axis-signs">
+        <div class="py-plus">+</div>
+        <div class="py-minus">−</div>
+        <div class="px-plus">t</div>
+      </div>
+    </div>
+  </div>
   <script>
+  // helper: linspace
   function linspace(start, stop, step) {
     const arr = [];
     for (let x = start; x <= stop + 1e-9; x += step) {
@@ -108,115 +178,153 @@
   let posChart, velChart, accChart;
   let accPts = [];
 
-  function chartOptions() {
+  // common chart options (zero‐axis only, no ticks)
+  function baseOptions() {
     return {
       animation: false,
       responsive: true,
       scales: {
-        x: { grid: { display: false }, ticks: { display: false } },
+        x: { grid:{display:false}, ticks:{display:false} },
         y: {
-          grid: {
+          grid:{
             color: ctx => ctx.tick.value === 0 ? '#000' : 'transparent',
             lineWidth: 1
           },
-          ticks: { display: false }
-        }
-      },
-      plugins: {
-        legend: { display: false },
-        dragData: {
-          round: 1,
-          showTooltip: true,
-          onDrag: (e, dsIndex, index, value) => {
-            const id = e.chart.canvas.id;
-            if (id === 'accChart') {
-              accPts[index] = Math.round(value.y);
-              updateAll();
-            }
-          }
+          ticks:{display:false}
         }
       }
     };
   }
 
+  // init charts
   function initCharts() {
-    posChart = new Chart(document.getElementById('posChart'), {
-      type: 'line',
-      data: { datasets: [{ label: 'x(t)', data: [], borderColor: 'blue', showLine: true }] },
-      options: chartOptions()
-    });
+    posChart = new Chart(
+      document.getElementById('posChart'),
+      {
+        type: 'line',
+        data: { datasets:[{
+          label:'x(t)',
+          data:[],
+          borderColor:'blue',
+          showLine:true
+        }]},
+        options: baseOptions()
+      }
+    );
 
-    velChart = new Chart(document.getElementById('velChart'), {
-      type: 'line',
-      data: { datasets: [{ label: 'v(t)', data: [], borderColor: 'green', showLine: true }] },
-      options: chartOptions()
-    });
+    velChart = new Chart(
+      document.getElementById('velChart'),
+      {
+        type:'line',
+        data:{ datasets:[{
+          label:'v(t)',
+          data:[],
+          borderColor:'green',
+          showLine:true
+        }]},
+        options: baseOptions()
+      }
+    );
 
-    accChart = new Chart(document.getElementById('accChart'), {
-      type: 'line',
-      data: { datasets: [{ label: 'a(t)', data: [], borderColor: 'red', pointRadius: 6, pointBackgroundColor: 'red', showLine: true, stepped: true }] },
-      options: chartOptions()
-    });
+    // acceleration: draggable at each integer t, vertical only
+    accChart = new Chart(
+      document.getElementById('accChart'),
+      {
+        type:'line',
+        data:{ datasets:[{
+          label:'a(t)',
+          data:[],
+          borderColor:'red',
+          pointRadius:6,
+          pointBackgroundColor:'red',
+          showLine:true,
+          stepped:true
+        }]},
+        options: {
+          ...baseOptions(),
+          plugins: {
+            dragData:{
+              round:1,
+              showTooltip:true,
+              dragX:false,
+              onDrag:(e, ds, idx, val) => {
+                // snap to integer y
+                accPts[idx] = Math.round(val.y);
+                updateAll();
+              }
+            }
+          }
+        }
+      }
+    );
   }
 
-  function computeKinematics(accPts, duration, dt) {
+  // compute x(t), v(t) from piecewise-constant a(t)
+  function computeKinematics(acc, duration, dt) {
     const tArr = linspace(0, duration, dt);
-    const aArr = tArr.map(t => accPts[Math.floor(t)]);
     const vArr = [0], xArr = [0];
+
     for (let i = 1; i < tArr.length; i++) {
-      const a = aArr[i - 1];
-      const v = vArr[i - 1] + a * dt;
-      vArr.push(v);
-      const x = xArr[i - 1] + vArr[i - 1] * dt + 0.5 * a * dt * dt;
-      xArr.push(x);
+      const a0 = acc[Math.floor(tArr[i-1])] || 0;
+      const vNew = vArr[i-1] + a0 * dt;
+      vArr.push(vNew);
+      const xNew = xArr[i-1] + vArr[i-1]*dt + 0.5*a0*dt*dt;
+      xArr.push(xNew);
     }
+
     return { tArr, xArr, vArr };
   }
 
+  // redraw all charts
   function updateAll() {
     const duration = +document.getElementById('duration').value;
-    const dt = +document.getElementById('dt').value;
-    const showPos = document.getElementById('showPos').checked;
-    const showVel = document.getElementById('showVel').checked;
+    const dt       = +document.getElementById('dt').value;
+    const showPos  = document.getElementById('showPos').checked;
+    const showVel  = document.getElementById('showVel').checked;
 
+    // ensure accPts length = duration+1, prefilled with 0
     if (accPts.length !== duration + 1) {
       accPts = Array(duration + 1).fill(0);
     }
 
+    // compute data
     const { tArr, xArr, vArr } = computeKinematics(accPts, duration, dt);
 
-    posChart.data.datasets[0].data = tArr.map((t, i) => ({ x: t, y: xArr[i] }));
-    velChart.data.datasets[0].data = tArr.map((t, i) => ({ x: t, y: vArr[i] }));
-    accChart.data.datasets[0].data = accPts.map((a, i) => ({ x: i, y: a }));
-
+    // update position
+    posChart.data.datasets[0].data = tArr.map((t,i)=>({x:t,y:xArr[i]}));
     document.getElementById('posContainer').style.display = showPos ? 'block' : 'none';
-    document.getElementById('velContainer').style.display = showVel ? 'block' : 'none';
-
     posChart.update();
+
+    // update velocity
+    velChart.data.datasets[0].data = tArr.map((t,i)=>({x:t,y:vArr[i]}));
+    document.getElementById('velContainer').style.display = showVel ? 'block' : 'none';
     velChart.update();
+
+    // update acceleration (one dot per integer t)
+    accChart.data.datasets[0].data = accPts.map((a,i)=>({x:i,y:a}));
+    document.getElementById('accContainer').style.display = 'block';
     accChart.update();
   }
 
+  // reset to defaults
   function resetAll() {
     document.getElementById('duration').value = 5;
-    document.getElementById('dt').value = 0.1;
-    document.getElementById('showPos').checked = true;
-    document.getElementById('showVel').checked = true;
-    accPts = Array(6).fill(0);
+    document.getElementById('dt').value       = 0.1;
+    document.getElementById('showPos').checked= true;
+    document.getElementById('showVel').checked= true;
+    accPts = Array(6).fill(0); // 0…5 seconds
     updateAll();
   }
 
+  // hook buttons
   document.getElementById('updateBtn').onclick = updateAll;
-  document.getElementById('resetBtn').onclick = resetAll;
+  document.getElementById('resetBtn').onclick  = resetAll;
 
+  // initialize on load
   window.onload = () => {
     initCharts();
     resetAll();
   };
 </script>
 </body>
-</
-  
-
-
-  
+</html>
