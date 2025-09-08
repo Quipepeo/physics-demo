@@ -42,6 +42,159 @@
 
   <script>
     Chart.register(ChartDragDataPlugin);
+
+    // helper to generate [start, start+step, …, stop]
+    function linspace(start, stop, step) {
+      const out = [];
+      for (let v = start; v <= stop + 1e-9; v += step) {
+        out.push(+v.toFixed(6));
+      }
+      return out;
+    }
+
+    let posChart, velChart, accChart;
+    let accPts = [];
+
+    // base chart options
+    function baseOpts(duration) {
+      return {
+        animation: false,
+        responsive: true,
+        scales: {
+          x: {
+            type: 'linear',
+            min: 0, max: duration,
+            grid: { display: false },
+            ticks: { display: false, stepSize: 1 }
+          },
+          y: {
+            grid: {
+              color: ctx => ctx.tick.value === 0 ? '#000' : 'transparent',
+              lineWidth: 1
+            },
+            ticks: { display: false }
+          }
+        }
+      };
+    }
+
+    // initialize charts
+    function initCharts() {
+      const dur = +document.getElementById('duration').value;
+
+      posChart = new Chart('posChart', {
+        type: 'line',
+        data: { datasets:[{ data:[], borderColor:'blue', showLine:true }] },
+        options: baseOpts(dur)
+      });
+
+      velChart = new Chart('velChart', {
+        type: 'line',
+        data: { datasets:[{ data:[], borderColor:'green', showLine:true }] },
+        options: baseOpts(dur)
+      });
+
+      accChart = new Chart('accChart', {
+        type: 'line',
+        data: [{ data:[], borderColor:'red', pointRadius:8, pointBackgroundColor:'red', showLine:true, stepped:true }],
+        options: {
+          ...baseOpts(dur),
+          plugins: {
+            dragData: {
+              round: 1,
+              showTooltip: true,
+              dragX: false,
+              dragY: true,
+              onDrag: (e, ds, idx, val) => {
+                accPts[idx] = Math.round(val.y);
+                updateAll();
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // compute position & velocity from accPts, with initial x0, v0
+    function computeKin(acc, duration, dt, x0, v0) {
+      const t = linspace(0, duration, dt);
+      const v = [v0], x = [x0];
+
+      for (let i = 1; i < t.length; i++) {
+        // linear interp of acceleration between integers
+        const tau = t[i - 1];
+        const j = Math.floor(tau);
+        const frac = tau - j;
+        const a_j   = acc[j]   ?? acc[acc.length - 1];
+        const a_j1  = acc[j+1] ?? acc[acc.length - 1];
+        const a_val = a_j + (a_j1 - a_j) * frac;
+
+        v.push(v[i - 1] + a_val * dt);
+        x.push(x[i - 1] + v[i - 1] * dt + 0.5 * a_val * dt * dt);
+      }
+      return { t, x, v };
+    }
+
+    // redraw everything
+    function updateAll() {
+      const dur   = +document.getElementById('duration').value;
+      const dt    = +document.getElementById('dt').value;
+      const x0    = +document.getElementById('x0').value;
+      const v0    = +document.getElementById('v0').value;
+      const showX = document.getElementById('showPos').checked;
+      const showV = document.getElementById('showVel').checked;
+
+      // ensure one accPt per integer second
+      if (accPts.length !== dur + 1) {
+        accPts = Array(dur + 1).fill(0);
+      }
+
+      const { t, x, v } = computeKin(accPts, dur, dt, x0, v0);
+
+      // position chart
+      posChart.options = baseOpts(dur);
+      posChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: x[i] }));
+      document.getElementById('posContainer').style.display = showX ? 'block' : 'none';
+      posChart.update();
+
+      // velocity chart
+      velChart.options = baseOpts(dur);
+      velChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: v[i] }));
+      document.getElementById('velContainer').style.display = showV ? 'block' : 'none';
+      velChart.update();
+
+      // acceleration chart (input)
+      accChart.options = { ...baseOpts(dur), plugins: accChart.options.plugins };
+      accChart.data.datasets[0].data = accPts.map((a,i) => ({ x: i, y: a }));
+      document.getElementById('accContainer').style.display = 'block';
+      accChart.update();
+    }
+
+    // reset to defaults, including derived accPts from p(t)=t^3-3t^2+5
+    function resetAll() {
+      document.getElementById('duration').value = 5;
+      document.getElementById('dt').value       = 0.1;
+      document.getElementById('x0').value       = 5;  // p(0)=5
+      document.getElementById('v0').value       = 0;  // p'(0)=0
+      document.getElementById('showPos').checked = true;
+      document.getElementById('showVel').checked = true;
+
+      const dur = 5;
+      accPts = [];
+      for (let i = 0; i <= dur; i++) {
+        accPts.push(6 * i - 6);
+      }
+
+      initCharts();
+      updateAll();
+    }
+
+    window.onload = () => {
+      // wire buttons
+      document.getElementById('updateBtn').onclick = updateAll;
+      document.getElementById('resetBtn').onclick  = resetAll;
+      resetAll();
+    };
   </script>
 </head>
 <body>
@@ -55,6 +208,14 @@
     <div>
       <label for="dt">Time Step Δt (s)</label>
       <input type="number" id="dt" value="0.1" step="0.01" min="0.01">
+    </div>
+    <div>
+      <label for="x0">Initial Position x₀</label>
+      <input type="number" id="x0" value="5" step="1">
+    </div>
+    <div>
+      <label for="v0">Initial Velocity v₀</label>
+      <input type="number" id="v0" value="0" step="1">
     </div>
     <div>
       <label><input type="checkbox" id="showPos" checked> Show Position</label>
@@ -92,151 +253,5 @@
       </div>
     </div>
   </div>
-
-  <script>
-    // helper to generate [start, start+step, …, stop]
-    function linspace(start, stop, step) {
-      const out = [];
-      for (let v = start; v <= stop + 1e-9; v += step) {
-        out.push(+v.toFixed(6));
-      }
-      return out;
-    }
-
-    let posChart, velChart, accChart;
-    let accPts = [];
-
-    // base chart options
-    function baseOpts(duration) {
-      return {
-        animation: false,
-        responsive: true,
-        scales: {
-          x: {
-            type: 'linear',
-            min: 0, max: duration,
-            grid: { display: false },
-            ticks: { display: false },
-            ticks: { stepSize: 1 }
-          },
-          y: {
-            grid: {
-              color: ctx => ctx.tick.value === 0 ? '#000' : 'transparent',
-              lineWidth: 1
-            },
-            ticks: { display: false }
-          }
-        }
-      };
-    }
-
-    // initialize charts
-    function initCharts() {
-      const dur = +document.getElementById('duration').value;
-
-      posChart = new Chart('posChart', {
-        type: 'line',
-        data: { datasets:[{ data:[], borderColor:'blue', showLine:true }] },
-        options: baseOpts(dur)
-      });
-
-      velChart = new Chart('velChart', {
-        type: 'line',
-        data: { datasets:[{ data:[], borderColor:'green', showLine:true }] },
-        options: baseOpts(dur)
-      });
-
-      accChart = new Chart('accChart', {
-        type: 'line',
-        data: { datasets:[{
-          data:[], borderColor:'red',
-          pointRadius:8,
-          pointBackgroundColor:'red',
-          showLine:true,
-          stepped:true
-        }]},
-        options: {
-          ...baseOpts(dur),
-          plugins: {
-            dragData: {
-              round: 1,
-              showTooltip: true,
-              dragX: false,
-              dragY: true,
-              onDrag: (e, ds, idx, val) => {
-                // vertical only, snaps to whole number
-                accPts[idx] = Math.round(val.y);
-                updateAll();
-              }
-            }
-          }
-        }
-      });
-    }
-
-    // compute position & velocity from accPts
-    function computeKin(acc, duration, dt) {
-      const t = linspace(0, duration, dt);
-      const v = [0], x = [0];
-      for (let i = 1; i < t.length; i++) {
-        const a0 = acc[Math.floor(t[i - 1])] || 0;
-        v.push(v[i - 1] + a0 * dt);
-        x.push(x[i - 1] + v[i - 1] * dt + 0.5 * a0 * dt * dt);
-      }
-      return { t, x, v };
-    }
-
-    // redraw everything
-    function updateAll() {
-      const dur = +document.getElementById('duration').value;
-      const dt  = +document.getElementById('dt').value;
-      const showX = document.getElementById('showPos').checked;
-      const showV = document.getElementById('showVel').checked;
-
-      // ensure one dot per second
-      if (accPts.length !== dur + 1) {
-        accPts = Array(dur + 1).fill(0);
-      }
-
-      const { t, x, v } = computeKin(accPts, dur, dt);
-
-      // position
-      posChart.options = baseOpts(dur);
-      posChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: x[i] }));
-      document.getElementById('posContainer').style.display = showX ? 'block' : 'none';
-      posChart.update();
-
-      // velocity
-      velChart.options = baseOpts(dur);
-      velChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: v[i] }));
-      document.getElementById('velContainer').style.display = showV ? 'block' : 'none';
-      velChart.update();
-
-      // acceleration
-      accChart.options = {
-        ...baseOpts(dur),
-        plugins: accChart.options.plugins
-      };
-      accChart.data.datasets[0].data = accPts.map((a,i) => ({ x: i, y: a }));
-      document.getElementById('accContainer').style.display = 'block';
-      accChart.update();
-    }
-
-    // reset to default
-    function resetAll() {
-      document.getElementById('duration').value = 5;
-      document.getElementById('dt').value = 0.1;
-      document.getElementById('showPos').checked = true;
-      document.getElementById('showVel').checked = true;
-      accPts = Array(6).fill(0);  // t=0…5
-      initCharts();
-      updateAll();
-    }
-
-    // event hooks
-    document.getElementById('updateBtn').onclick = updateAll;
-    document.getElementById('resetBtn').onclick  = resetAll;
-    window.onload = resetAll;
-  </script>
 </body>
 </html>
