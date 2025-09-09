@@ -2,276 +2,375 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-  <title>Kinematics Simulator</title>
-
-  <!-- Chart.js + dragData plugin -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-dragdata@2/dist/chartjs-plugin-dragdata.min.js"></script>
-
+  <title>Pierre Marie Curie - Physics 9 - Prof. Telson</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    h1 { text-align: center; }
-    #controls {
-      max-width: 800px;
-      margin: 0 auto 20px;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
-      gap: 10px;
-      align-items: end;
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      text-align: center;
     }
-    #controls label { display: block; font-weight: bold; margin-bottom: 4px; }
-    #controls input[type="number"] { width: 100%; }
-    #buttons { grid-column: span 2; text-align: center; margin-top: 10px; }
+    h1 { margin-bottom: 4px; }
+    h2 { margin-top: 0; color: #555; }
+    #controls {
+      display: inline-flex;
+      gap: 20px;
+      margin: 20px 0;
+      align-items: center;
+    }
+    #controls label {
+      display: flex;
+      flex-direction: column;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    #controls input {
+      width: 80px;
+      padding: 4px;
+      text-align: right;
+    }
+    #exportBtn {
+      padding: 6px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
     #charts {
       display: flex;
-      flex-wrap: wrap;
-      justify-content: space-around;
       gap: 20px;
-      max-width: 1200px;
-      margin: 0 auto;
+      justify-content: center;
+      margin-top: 20px;
     }
-    .chart-container {
-      position: relative;
-      flex: 1 1 300px;
-      max-width: 380px;
+    .chart-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
     }
-    .chart-container canvas {
-      width: 100% !important;
-      height: auto !important;
+    .chart-wrapper h3 {
+      margin-bottom: 8px;
+      font-size: 16px;
     }
-    .axis-signs {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      pointer-events: none;
-      font-size: 1.2em;
-      color: #555;
+    svg {
+      border: 1px solid #ccc;
+      background: #fafafa;
     }
-    .axis-signs .py-plus  { position: absolute; left: 4px;  top: 4px; }
-    .axis-signs .py-minus { position: absolute; left: 4px;  bottom: 4px; }
-    .axis-signs .px-plus  { position: absolute; right: 4px; bottom: 4px; }
+    .line {
+      fill: none;
+      stroke-width: 2px;
+    }
+    .dial {
+      fill: red;
+      cursor: ns-resize;
+    }
+    .grid line {
+      stroke: #ddd;
+    }
+    .grid path {
+      display: none;
+    }
+    .axis path,
+    .axis line {
+      stroke: #333;
+    }
+    .axis text {
+      font-size: 12px;
+    }
   </style>
 </head>
-<script>
-  // Register the drag plugin
-  Chart.register(ChartDragDataPlugin);
-
-  // Generate [start, start+step, …, stop]
-  function linspace(start, stop, step) {
-    const out = [];
-    for (let v = start; v <= stop + 1e-9; v += step) {
-      out.push(+v.toFixed(6));
-    }
-    return out;
-  }
-
-  let posChart, velChart, accChart;
-  let accPts = [];
-
-  // Shared chart options with axis titles
-  function chartOpts(duration, yLabel) {
-    return {
-      animation: false,
-      responsive: true,
-      scales: {
-        x: {
-          type: 'linear',
-          min: 0,
-          max: duration,
-          grid: { display: true },
-          ticks: { display: true, stepSize: 1 },
-          title: { display: true, text: 'Time (s)' }
-        },
-        y: {
-          grid: {
-            color: ctx => ctx.tick.value === 0 ? '#000' : '#ccc',
-            lineWidth: 1
-          },
-          ticks: { display: true },
-          title: { display: true, text: yLabel }
-        }
-      }
-    };
-  }
-
-  // Initialize all three charts
-  function initCharts() {
-    const dur = +document.getElementById('duration').value;
-
-    posChart = new Chart('posChart', {
-      type: 'line',
-      data: { datasets: [{ data: [], borderColor: 'blue', showLine: true }] },
-      options: chartOpts(dur, 'Position (m)')
-    });
-
-    velChart = new Chart('velChart', {
-      type: 'line',
-      data: { datasets: [{ data: [], borderColor: 'green', showLine: true }] },
-      options: chartOpts(dur, 'Velocity (m/s)')
-    });
-
-    accChart = new Chart('accChart', {
-      type: 'line',
-      data: { datasets: [{
-        data: [],
-        borderColor: 'red',
-        pointRadius: 8,
-        pointBackgroundColor: 'red',
-        showLine: true,
-        stepped: true
-      }]},
-      options: {
-        ...chartOpts(dur, 'Acceleration (m/s²)'),
-        plugins: {
-          dragData: {
-            round: 1,
-            showTooltip: true,
-            dragX: false,
-            dragY: true,
-            onDrag: (e, ds, idx, val) => {
-              accPts[idx] = Math.round(val.y);
-              updateAll();
-            }
-          }
-        }
-      }
-    });
-  }
-
-  // Numerically integrate a→v and v→x
-  function computeKin(acc, duration, dt, x0, v0) {
-    const t = linspace(0, duration, dt);
-    const v = [v0], x = [x0];
-
-    for (let i = 1; i < t.length; i++) {
-      const tau = t[i - 1];
-      const j = Math.floor(tau);
-      const frac = tau - j;
-      const a_j  = acc[j]   ?? acc[acc.length - 1];
-      const a_j1 = acc[j+1] ?? acc[acc.length - 1];
-      const a_val = a_j + (a_j1 - a_j) * frac;
-
-      v.push(v[i - 1] + a_val * dt);
-      x.push(x[i - 1] + v[i - 1] * dt + 0.5 * a_val * dt * dt);
-    }
-    return { t, x, v };
-  }
-
-  // Redraw all charts
-  function updateAll() {
-    const dur   = +document.getElementById('duration').value;
-    const dt    = +document.getElementById('dt').value;
-    const x0    = +document.getElementById('x0').value;
-    const v0    = +document.getElementById('v0').value;
-    const showX = document.getElementById('showPos').checked;
-    const showV = document.getElementById('showVel').checked;
-
-    if (accPts.length !== dur + 1) {
-      accPts = Array(dur + 1).fill(0);
-    }
-
-    const { t, x, v } = computeKin(accPts, dur, dt, x0, v0);
-
-    // Position
-    posChart.options = chartOpts(dur, 'Position (m)');
-    posChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: x[i] }));
-    document.getElementById('posContainer').style.display = showX ? 'block' : 'none';
-    posChart.update();
-
-    // Velocity
-    velChart.options = chartOpts(dur, 'Velocity (m/s)');
-    velChart.data.datasets[0].data = t.map((tt,i) => ({ x: tt, y: v[i] }));
-    document.getElementById('velContainer').style.display = showV ? 'block' : 'none';
-    velChart.update();
-
-    // Acceleration (input)
-    accChart.options = chartOpts(dur, 'Acceleration (m/s²)');
-    accChart.options.plugins = accChart.options.plugins;
-    accChart.data.datasets[0].data = accPts.map((a,i) => ({ x: i, y: a }));
-    document.getElementById('accContainer').style.display = 'block';
-    accChart.update();
-  }
-
-  // Reset to defaults: p(t)=t³−3t²+5 → a(t)=6t−6
-  function resetAll() {
-    document.getElementById('duration').value = 5;
-    document.getElementById('dt').value       = 0.1;
-    document.getElementById('x0').value       = 5;
-    document.getElementById('v0').value       = 0;
-    document.getElementById('showPos').checked = true;
-    document.getElementById('showVel').checked = true;
-
-    accPts = [];
-    for (let i = 0; i <= 5; i++) {
-      accPts.push(6 * i - 6);
-    }
-
-    initCharts();
-    updateAll();
-  }
-
-  window.onload = () => {
-    document.getElementById('updateBtn').onclick = updateAll;
-    document.getElementById('resetBtn').onclick  = resetAll;
-    resetAll();
-  };
-</script>
 <body>
-  <h1>Kinematics Simulator</h1>
+
+  <h1>Pierre Marie Curie - Physics 9 - Prof. Telson</h1>
+  <h2>Kinematics Simulator</h2>
 
   <div id="controls">
-    <div>
-      <label for="duration">Duration (s)</label>
-      <input type="number" id="duration" value="5" step="1" min="1">
-    </div>
-    <div>
-      <label for="dt">Time Step Δt (s)</label>
-      <input type="number" id="dt" value="0.1" step="0.01" min="0.01">
-    </div>
-    <div>
-      <label for="x0">Initial Position x₀</label>
-      <input type="number" id="x0" value="5" step="1">
-    </div>
-    <div>
-      <label for="v0">Initial Velocity v₀</label>
-      <input type="number" id="v0" value="0" step="1">
-    </div>
-    <div>
-      <label><input type="checkbox" id="showPos" checked> Show Position</label>
-      <label><input type="checkbox" id="showVel" checked> Show Velocity</label>
-    </div>
-    <div id="buttons">
-      <button id="updateBtn">Update Graphs</button>
-      <button id="resetBtn">Start Over</button>
-    </div>
+    <label>
+      Δt (s)
+      <input type="number" id="dt" value="0.1" min="0.01" step="0.01"/>
+    </label>
+    <label>
+      Initial Position x₀ (m)
+      <input type="number" id="x0" value="0" step="1"/>
+    </label>
+    <label>
+      Initial Velocity v₀ (m/s)
+      <input type="number" id="v0" value="0" step="1"/>
+    </label>
+    <button id="exportBtn">Export CSV</button>
   </div>
 
   <div id="charts">
-    <div class="chart-container" id="posContainer">
-      <canvas id="posChart"></canvas>
-      <div class="axis-signs">
-        <div class="py-plus">+</div>
-        <div class="py-minus">−</div>
-        <div class="px-plus">t</div>
-      </div>
+    <div class="chart-wrapper">
+      <h3>Position vs. Time</h3>
+      <div id="pos-chart"></div>
     </div>
-    <div class="chart-container" id="velContainer">
-      <canvas id="velChart"></canvas>
-      <div class="axis-signs">
-        <div class="py-plus">+</div>
-        <div class="py-minus">−</div>
-        <div class="px-plus">t</div>
-      </div>
+    <div class="chart-wrapper">
+      <h3>Velocity vs. Time</h3>
+      <div id="vel-chart"></div>
     </div>
-    <div class="chart-container" id="accContainer">
-      <canvas id="accChart"></canvas>
-      <div class="axis-signs">
-        <div class="py-plus">+</div>
-        <div class="py-minus">−</div>
-        <div class="px-plus">t</div>
-      </div>
+    <div class="chart-wrapper">
+      <h3>Acceleration vs. Time</h3>
+      <div id="acc-chart"></div>
     </div>
   </div>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // Configuration
+    const duration = 5;              // seconds
+    const margin   = { top: 20, right: 20, bottom: 30, left: 50 };
+    const width    = 300 - margin.left - margin.right;
+    const height   = 250 - margin.top  - margin.bottom;
+
+    // DOM elements
+    const dtInput   = document.getElementById('dt');
+    const x0Input   = document.getElementById('x0');
+    const v0Input   = document.getElementById('v0');
+    const exportBtn = document.getElementById('exportBtn');
+
+    // Initial acceleration at integer seconds: a(t) = 6t − 6
+    let accData = d3.range(0, duration + 1).map(t => ({
+      t, a: 6 * t - 6
+    }));
+
+    // Create SVG container + groups for each chart
+    function makeSvg(containerId) {
+      return d3.select(containerId)
+        .append('svg')
+          .attr('width',  width + margin.left + margin.right)
+          .attr('height', height + margin.top  + margin.bottom)
+        .append('g')
+          .attr('transform', `translate(${margin.left},${margin.top})`);
+    }
+
+    const svgPos = makeSvg('#pos-chart');
+    const svgVel = makeSvg('#vel-chart');
+    const svgAcc = makeSvg('#acc-chart');
+
+    // Scales (x shared)
+    const xScale = d3.scaleLinear()
+      .domain([0, duration])
+      .range([0, width]);
+
+    // Y-scales: fixed for pos/vel, dynamic for acc
+    const yScalePos = d3.scaleLinear()
+      .domain([-40, 40])
+      .range([height, 0]);
+
+    const yScaleVel = d3.scaleLinear()
+      .domain([-40, 40])
+      .range([height, 0]);
+
+    let yScaleAcc = d3.scaleLinear()
+      .domain(d3.extent(accData, d => d.a)).nice()
+      .range([height, 0]);
+
+    // Line generators
+    const linePos = d3.line()
+      .x(d => xScale(d.t))
+      .y(d => yScalePos(d.x));
+
+    const lineVel = d3.line()
+      .x(d => xScale(d.t))
+      .y(d => yScaleVel(d.v));
+
+    const lineAcc = d3.line()
+      .x(d => xScale(d.t))
+      .y(d => yScaleAcc(d.a));
+
+    // Draw static grid + axes groups
+    function setupChart(svg, xS, yS, yLabel) {
+      // X grid lines
+      svg.append('g')
+        .attr('class', 'grid x-grid')
+        .attr('transform', `translate(0,${height})`);
+
+      // Y grid lines
+      svg.append('g')
+        .attr('class', 'grid y-grid');
+
+      // X axis
+      svg.append('g')
+        .attr('class', 'axis x-axis')
+        .attr('transform', `translate(0,${height})`);
+
+      // Y axis
+      svg.append('g')
+        .attr('class', 'axis y-axis')
+        .append('text')
+          .attr('transform', 'rotate(-90)')
+          .attr('y', 12)
+          .attr('dy', '-3.5em')
+          .attr('fill', '#000')
+          .attr('text-anchor', 'end')
+          .text(yLabel);
+    }
+
+    setupChart(svgPos, xScale, yScalePos, 'Position (m)');
+    setupChart(svgVel, xScale, yScaleVel, 'Velocity (m/s)');
+    setupChart(svgAcc, xScale, yScaleAcc, 'Acceleration (m/s²)');
+
+    // Add initial lines & (acc) dials
+    const pathPos = svgPos.append('path').attr('class','line').attr('stroke','blue');
+    const pathVel = svgVel.append('path').attr('class','line').attr('stroke','green');
+    const pathAcc = svgAcc.append('path').attr('class','line').attr('stroke','red');
+
+    const drag = d3.drag()
+      .on('drag', (event, d) => {
+        // clamp, invert, round
+        const newA = Math.round(
+          yScaleAcc.invert(
+            Math.max(0, Math.min(height, event.y))
+          )
+        );
+        d.a = newA;
+        d3.select(event.sourceEvent.target)
+          .attr('cy', yScaleAcc(d.a));
+        updateAll();
+      });
+
+    svgAcc.selectAll('.dial')
+      .data(accData)
+      .enter()
+      .append('circle')
+        .attr('class','dial')
+        .attr('r',6)
+        .attr('cx', d => xScale(d.t))
+        .attr('cy', d => yScaleAcc(d.a))
+        .call(drag);
+
+    // Compute (t, x, v, a) arrays and redraw everything
+    let lastData = [];
+
+    function updateAll() {
+      const dt = +dtInput.value;
+      const x0 = +x0Input.value;
+      const v0 = +v0Input.value;
+
+      // 1) Sample times
+      const tVals = [];
+      for (let t = 0; t <= duration + 1e-9; t += dt) {
+        tVals.push(+t.toFixed(6));
+      }
+
+      // 2) Interpolate acceleration a(t) on tVals
+      const aVals = tVals.map(t => {
+        const i = Math.floor(t);
+        const frac = t - i;
+        const a0 = accData[i]?.a ?? accData[accData.length-1].a;
+        const a1 = accData[i+1]?.a ?? a0;
+        return a0 + (a1 - a0) * frac;
+      });
+
+      // 3) Integrate to get v & x
+      const vVals = [v0];
+      const xVals = [x0];
+      for (let i = 1; i < tVals.length; i++) {
+        vVals.push(vVals[i-1] + aVals[i-1] * dt);
+        xVals.push(
+          xVals[i-1] +
+          vVals[i-1] * dt +
+          0.5 * aVals[i-1] * dt * dt
+        );
+      }
+
+      // 4) Build unified data for CSV
+      lastData = tVals.map((t,i) => ({
+        t: tVals[i],
+        x: xVals[i],
+        v: vVals[i],
+        a: aVals[i]
+      }));
+
+      // 5) Update Y-domain for acc
+      yScaleAcc.domain(d3.extent(accData, d => d.a)).nice();
+
+      // 6) Update grids & axes for each chart
+      const xAxisGrid = d3.axisBottom(xScale)
+        .tickValues(tVals)
+        .tickSize(-height)
+        .tickFormat('');
+      const yGridPos = d3.axisLeft(yScalePos)
+        .ticks(8)
+        .tickSize(-width)
+        .tickFormat('');
+      const yGridVel = d3.axisLeft(yScaleVel)
+        .ticks(8)
+        .tickSize(-width)
+        .tickFormat('');
+      const yGridAcc = d3.axisLeft(yScaleAcc)
+        .ticks(8)
+        .tickSize(-width)
+        .tickFormat('');
+
+      svgPos.select('.x-grid').call(xAxisGrid);
+      svgPos.select('.y-grid').call(yGridPos);
+      svgVel.select('.x-grid').call(xAxisGrid);
+      svgVel.select('.y-grid').call(yGridVel);
+      svgAcc.select('.x-grid').call(xAxisGrid);
+      svgAcc.select('.y-grid').call(yGridAcc);
+
+      const xAxis = d3.axisBottom(xScale)
+        .tickValues(tVals)
+        .tickFormat(t => +t.toFixed(2));
+      const yAxisPos = d3.axisLeft(yScalePos).ticks(8);
+      const yAxisVel = d3.axisLeft(yScaleVel).ticks(8);
+      const yAxisAcc = d3.axisLeft(yScaleAcc).ticks(8);
+
+      svgPos.select('.x-axis')
+        .call(xAxis)
+        .select('text').text('Time (s)');
+      svgPos.select('.y-axis').call(yAxisPos);
+
+      svgVel.select('.x-axis')
+        .call(xAxis)
+        .select('text').text('Time (s)');
+      svgVel.select('.y-axis').call(yAxisVel);
+
+      svgAcc.select('.x-axis')
+        .call(xAxis)
+        .select('text').text('Time (s)');
+      svgAcc.select('.y-axis').call(yAxisAcc);
+
+      // 7) Redraw lines
+      pathPos
+        .datum(lastData)
+        .attr('d', linePos);
+      pathVel
+        .datum(lastData)
+        .attr('d', lineVel);
+      pathAcc
+        .datum(accData)
+        .attr('d', lineAcc);
+
+      // 8) Move acc dials
+      svgAcc.selectAll('.dial')
+        .attr('cy', d => yScaleAcc(d.a));
+    }
+
+    // CSV Export
+    function exportCSV() {
+      const header = 't,x,v,a\n';
+      const rows = lastData.map(d => `${d.t},${d.x},${d.v},${d.a}`).join('\n');
+      const csv  = header + rows;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = 'kinematics.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // Wire events
+    dtInput.addEventListener('input', updateAll);
+    x0Input.addEventListener('input', updateAll);
+    v0Input.addEventListener('input', updateAll);
+    exportBtn.addEventListener('click', exportCSV);
+
+    // Initial draw
+    updateAll();
+  });
+  </script>
 </body>
 </html>
