@@ -6,10 +6,29 @@
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <style>
     body { font-family: sans-serif; margin: 20px; text-align: center; }
+
+    /* Logo header */
+    .sim-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .sim-logo {
+      height: 120px;      /* tripled from 40px */
+      width: auto;
+      object-fit: contain;
+    }
+
     h1 { margin-bottom: 4px; }
     h2 { color: #555; margin-top: 0; }
+
     #controls {
-      display: inline-flex; gap: 12px; margin-bottom: 12px; align-items: center;
+      display: inline-flex;
+      gap: 12px;
+      margin-bottom: 12px;
+      align-items: center;
     }
     #controls label { font-weight: bold; }
     #controls input[type="number"] { width: 60px; }
@@ -22,40 +41,47 @@
       font-size: 14px;
       border-radius: 20px;
     }
+
     #charts {
-      display: flex; gap: 20px; justify-content: center; margin-top: 20px;
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      margin-top: 20px;
     }
-    .chart-wrapper { display: flex; flex-direction: column; align-items: center; }
+    .chart-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
     .chart-wrapper h3 { margin-bottom: 8px; }
+
     svg { border: 1px solid #ccc; background: #fafafa; }
     .line { fill: none; stroke-width: 2px; }
     .dial { cursor: ns-resize; }
     .dial.acc { fill: red; }
     .dial.vel { fill: green; }
-    .dial.init { fill: blue; }
+    .dial.init { fill: green; }  /* changed from blue to green */
     .grid line { stroke: #ddd; }
     .grid path { display: none; }
     .axis path, .axis line { stroke: #333; }
     .axis text { font-size: 12px; }
   </style>
 </head>
+
 <body>
-  <h1>Pierre Marie Curie – Physics 9 – Prof. Telson</h1>
-  <h2>Kinematics Simulator</h2>
+
+  <header class="sim-header">
+    <img src="logo.svg" alt="School Logo" class="sim-logo">
+    <div>
+      <h1>Pierre Marie Curie – Physics 9 – Prof. Telson</h1>
+      <h2>Kinematics Simulator</h2>
+    </div>
+  </header>
 
   <div id="controls">
-    <label>
-      <input type="radio" name="mode" value="acc" checked>
-      Acceleration-driven
-    </label>
-    <label>
-      <input type="radio" name="mode" value="vel">
-      Velocity-driven
-    </label>
-    <label>
-      Δt (s)
-      <input type="number" id="dt" value="1.0" min="0.01" step="0.01">
-    </label>
+    <label><input type="radio" name="mode" value="acc" checked> Acceleration-driven</label>
+    <label><input type="radio" name="mode" value="vel"> Velocity-driven</label>
+    <label>Δt (s)<input type="number" id="dt" value="1.0" min="0.01" step="0.01"></label>
     <button id="exportBtn">Export CSV</button>
     <button id="resetBtn">Reset Graph(s)</button>
   </div>
@@ -84,25 +110,29 @@
     const W = OW - margin.left - margin.right;
     const H = OH - margin.top - margin.bottom;
 
+    // DOM refs
     const dtInput   = d3.select('#dt');
     const modeInput = d3.selectAll('input[name="mode"]');
     const exportBtn = d3.select('#exportBtn');
     const resetBtn  = d3.select('#resetBtn');
 
+    // Build SVG containers
     function makeSVG(sel) {
       return d3.select(sel)
-        .append('svg').attr('width',OW).attr('height',OH)
-        .append('g').attr('transform',`translate(${margin.left},${margin.top})`);
+        .append('svg').attr('width', OW).attr('height', OH)
+        .append('g').attr('transform', `translate(${margin.left},${margin.top})`);
     }
     const svgPos = makeSVG('#pos-chart');
     const svgVel = makeSVG('#vel-chart');
     const svgAcc = makeSVG('#acc-chart');
 
+    // Scales
     const xScale  = d3.scaleLinear([0,duration],[0,W]);
     const yScaleP = d3.scaleLinear([-10,10],[H,0]);
     const yScaleV = d3.scaleLinear([-10,10],[H,0]);
     const yScaleA = d3.scaleLinear([-10,10],[H,0]);
 
+    // Line generators
     const lineP = d3.line().curve(d3.curveBasis)
       .x(d=>xScale(d.t)).y(d=>yScaleP(d.x));
     const lineV = d3.line()
@@ -110,28 +140,25 @@
     const lineA = d3.line()
       .x(d=>xScale(d.t)).y(d=>yScaleA(d.a));
 
+    // Axes + grid setup
     function setupAxes(svg,label) {
-      svg.append('g').attr('class','grid x-grid')
-         .attr('transform',`translate(0,${H})`);
+      svg.append('g').attr('class','grid x-grid').attr('transform',`translate(0,${H})`);
       svg.append('g').attr('class','grid y-grid');
-      svg.append('g').attr('class','axis x-axis')
-         .attr('transform',`translate(0,${H})`);
+      svg.append('g').attr('class','axis x-axis').attr('transform',`translate(0,${H})`);
       svg.append('g').attr('class','axis y-axis')
-         .append('text')
-         .attr('transform','rotate(-90)')
-         .attr('y',12)
-         .attr('dy','-3.5em')
-         .attr('text-anchor','end')
-         .text(label);
+         .append('text').attr('transform','rotate(-90)').attr('y',12)
+         .attr('dy','-3.5em').attr('text-anchor','end').text(label);
     }
     setupAxes(svgPos,'Position (m)');
     setupAxes(svgVel,'Velocity (m/s)');
     setupAxes(svgAcc,'Acceleration (m/s²)');
 
+    // Paths
     const pathP = svgPos.append('path').attr('class','line').attr('stroke','blue');
     const pathV = svgVel.append('path').attr('class','line').attr('stroke','green');
     const pathA = svgAcc.append('path').attr('class','line').attr('stroke','red');
 
+    // Drag helper
     function dialDrag(yScale, setter) {
       return d3.drag().on('drag', (ev, d) => {
         const y = clamp(ev.y, 0, H);
@@ -142,7 +169,9 @@
       });
     }
 
+    // Data arrays & builders
     let tPoints = [], accData = [], velData = [{t:0,v:0}];
+
     function buildTimePoints(dt) {
       return d3.range(0, duration + 1e-9, dt).map(t => +t.toFixed(6));
     }
@@ -158,11 +187,12 @@
       return tPoints.map((t,i)=>({ t, v: vPts[i] }));
     }
 
+    // Rebind & draw dials
     let accSel, velSel;
     function rebuildDials() {
       const dt = +dtInput.node().value;
-      tPoints  = buildTimePoints(dt);
-      accData  = buildAccData(dt);
+      tPoints = buildTimePoints(dt);
+      accData = buildAccData(dt);
 
       if (modeInput.filter(':checked').node().value === 'vel') {
         velData = buildVelFromAcc(dt);
@@ -172,6 +202,7 @@
         );
       }
 
+      // Acceleration dials
       accSel = svgAcc.selectAll('circle.dial.acc').data(accData, d=>d.t);
       accSel.exit().remove();
       accSel = accSel.enter()
@@ -181,6 +212,7 @@
         .attr('cy',d=>yScaleA(d.a))
         .call(dialDrag(yScaleA, (d,v)=>d.a=v));
 
+      // Velocity dials
       velSel = svgVel.selectAll('circle.dial.vel').data(velData, d=>d.t);
       velSel.exit().remove();
       velSel = velSel.enter()
@@ -191,23 +223,35 @@
         .call(dialDrag(yScaleV, (d,v)=>d.v=v));
     }
 
+    // Initial position & initial velocity
     let x0 = 0;
+    let initVel = 0;
+
     const posDial = svgPos.append('circle')
       .attr('class','dial init').attr('r',6)
       .attr('cx',xScale(0)).attr('cy',yScaleP(x0))
       .call(dialDrag(yScaleP, (_,v)=>x0=v));
 
+    const velInitDial = svgVel.append('circle')
+      .attr('class','dial init').attr('r',6)
+      .attr('cx',xScale(0)).attr('cy',yScaleV(initVel))
+      .call(dialDrag(yScaleV, (_,v)=>{ initVel=v; updateAll(); }));
+
+    // Main update
     let lastData = [];
     function updateAll() {
       const mode = modeInput.filter(':checked').node().value;
       const dt   = +dtInput.node().value;
+
       if (!tPoints.length || Math.abs((tPoints[1]-tPoints[0]) - dt) > 1e-9) {
         rebuildDials();
       }
 
       let aSamp = accData.map(d=>d.a), vSamp = [], xSamp = [];
+
       if (mode === 'acc') {
-        vSamp = [velData[0].v];
+        // start from user-set initVel
+        vSamp = [ initVel ];
         for (let i=1; i<aSamp.length; i++){
           vSamp.push(vSamp[i-1] + aSamp[i-1]*dt);
         }
@@ -233,6 +277,7 @@
         t, x:xSamp[i], v:vSamp[i], a:aSamp[i]
       }));
 
+      // redraw grids & axes
       const xGrid  = d3.axisBottom(xScale).tickValues(tPoints).tickSize(-H).tickFormat('');
       const yGridP = d3.axisLeft(yScaleP).ticks(8).tickSize(-W).tickFormat('');
       const yGridV = d3.axisLeft(yScaleV).ticks(8).tickSize(-W).tickFormat('');
@@ -244,17 +289,15 @@
       svgAcc.select('.x-grid').call(xGrid);
       svgAcc.select('.y-grid').call(yGridA);
 
-      const xAxis = d3.axisBottom(xScale)
-        .tickValues(tPoints)
-        .tickFormat(d=>d.toFixed(2));
+      const xAxis = d3.axisBottom(xScale).tickValues(tPoints).tickFormat(d=>d.toFixed(2));
       svgPos.select('.x-axis').call(xAxis);
       svgVel.select('.x-axis').call(xAxis);
       svgAcc.select('.x-axis').call(xAxis);
-
       svgPos.select('.y-axis').call(d3.axisLeft(yScaleP).ticks(8));
       svgVel.select('.y-axis').call(d3.axisLeft(yScaleV).ticks(8));
       svgAcc.select('.y-axis').call(d3.axisLeft(yScaleA).ticks(9));
 
+      // redraw paths & dials
       pathP.datum(lastData).attr('d',lineP);
       pathV.datum(lastData).attr('d',lineV);
       pathA.datum(lastData).attr('d',lineA);
@@ -262,39 +305,42 @@
       posDial.attr('cy',yScaleP(x0));
       accSel.attr('cy',d=>yScaleA(d.a));
       velSel.attr('cy',d=>yScaleV(d.v));
-      accSel.style('display', mode==='acc' ? null : 'none');
-      velSel.style('display', mode==='vel' ? null : 'none');
+
+      // reposition & show/hide init-velocity dial
+      velInitDial
+        .attr('cy', yScaleV(initVel))
+        .style('display', mode==='acc' ? null : 'none');
+
+      accSel.style('display',mode==='acc'?null:'none');
+      velSel.style('display',mode==='vel'?null:'none');
     }
 
+    // Reset everything
     function resetAll() {
-      dtInput.property('value', 1.0);
-      modeInput.filter('[value="acc"]').property('checked', true);
-      x0       = 0;
-      velData  = [{t:0,v:0}];
-      tPoints  = [];
-      accData  = [];
+      dtInput.property('value',1.0);
+      modeInput.filter('[value="acc"]').property('checked',true);
+      x0 = 0;
+      initVel = 0;
+      velData = [{t:0,v:0}];
+      tPoints = [];
+      accData = [];
       rebuildDials();
       updateAll();
     }
 
-    // CSV export with Web Share API → FS API → iOS Data-URI → anchor download
     async function exportCSV() {
-      // build header + rows with two-decimal formatting
       const header = 'Time,Position,Velocity,Acceleration\n';
       const rows   = lastData
         .map(d => `${d.t.toFixed(2)},${d.x.toFixed(2)},${d.v.toFixed(2)},${d.a.toFixed(2)}`)
         .join('\n');
       const csvStr = header + rows;
+      const blob   = new Blob([csvStr], { type:'text/csv;charset=utf-8' });
 
-      // Web Share API if available
-      const file = new File([csvStr], 'kinematics.csv', { type:'text/csv;charset=utf-8' });
+      // Web Share API
+      const file = new File([blob],'kinematics.csv',{type:'text/csv'});
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({
-            files: [file],
-            title: 'Kinematics Data',
-            text: 'Exported kinematics CSV'
-          });
+          await navigator.share({ files:[file], title:'Kinematics Data' });
           return;
         } catch {}
       }
@@ -303,11 +349,11 @@
       if ('showSaveFilePicker' in window) {
         try {
           const handle = await window.showSaveFilePicker({
-            suggestedName: 'kinematics.csv',
-            types: [{ description:'CSV', accept:{'text/csv':['.csv']} }]
+            suggestedName:'kinematics.csv',
+            types:[{description:'CSV',accept:{'text/csv':['.csv']}}]
           });
           const writable = await handle.createWritable();
-          await writable.write(new Blob([csvStr],{type:'text/csv'}));
+          await writable.write(blob);
           await writable.close();
           return;
         } catch {}
@@ -315,32 +361,31 @@
 
       // iOS synchronous data-URI fallback
       const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-                  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      if (isiOS) {
-        const dataUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvStr);
-        window.open(dataUrl, '_blank');
-        return;
-      }
-
-      // other browsers: anchor-download
-      const blob = new Blob([csvStr],{type:'text/csv'});
-      const url = URL.createObjectURL(blob);
-      const a   = document.createElement('a');
-      a.href    = url;
-      a.download= 'kinematics.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+                  || (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+    if (isiOS) {
+      const dataUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvStr);
+      window.open(dataUrl, '_blank');
+      return;
     }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kinematics.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } // end exportCSV
 
-    dtInput.on('input', updateAll);
-    modeInput.on('change', updateAll);
-    exportBtn.on('click', exportCSV);
-    resetBtn.on('click', resetAll);
+  // Wire events
+  dtInput.on('input', updateAll);
+  modeInput.on('change', updateAll);
+  exportBtn.on('click', exportCSV);
+  resetBtn.on('click', resetAll);
 
-    updateAll();
-  });
-  </script>
+  // Initial draw
+  updateAll();
+}); // end DOMContentLoaded
+</script>
 </body>
 </html>
